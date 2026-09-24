@@ -91,13 +91,19 @@ System prompt: use tools for every figure and quote; cite form, date, accession 
 | GET | `/api/health` | Liveness |
 | GET | `/api/companies?q=` | Search ticker / name |
 | GET | `/api/companies/:ticker` | Company dossier summary |
+| GET | `/api/companies/:ticker/brief` | Research brief payload |
 | GET | `/api/companies/:ticker/facts/strip` | Revenue, operating income, net income, diluted EPS series |
 | GET | `/api/companies/:ticker/filings` | Filing list |
+| GET | `/api/search` | Filing index or keyword/section search (`ticker`, `form`, `year`, `item`, `q`) |
+| GET | `/api/filings/:accession` | Filing meta, section list, document list (no bodies) |
+| GET | `/api/sections/:id` | Stored section body |
+| GET | `/api/documents/:id` | Stored document/exhibit text |
+| GET | `/api/matrix` | Latest section snippet per ticker for an item |
 | GET | `/api/evals` | Latest eval run summary |
 
 ## UI
 
-Ant Design layout in `apps/web`. Ant Design X for chat bubbles, sender, and tool-trace display. Screens: Overview, Company, Compare (≤4 tickers), Changes (two filings + section item), Evals.
+Ant Design layout in `apps/web`. Ant Design X for chat bubbles, sender, and tool-trace display. Screens: Research brief, Filings (filters + results + document drawer), Section matrix, Peer metrics (≤4 tickers), Filing changes (two filings + section item), Evals.
 
 ## Evals
 

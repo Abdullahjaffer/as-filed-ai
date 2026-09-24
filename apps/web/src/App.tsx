@@ -4,6 +4,7 @@ import {
   Card,
   Col,
   Collapse,
+  Drawer,
   Flex,
   Form,
   Input,
@@ -12,8 +13,10 @@ import {
   Row,
   Select,
   Space,
+  Spin,
   Statistic,
   Table,
+  Tabs,
   Tag,
   Typography,
   message,
@@ -30,7 +33,34 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 const { Header, Sider, Content } = Layout;
 
-type SectionKey = "research" | "peers" | "changes" | "evals";
+type SectionKey = "research" | "filings" | "matrix" | "peers" | "changes" | "evals";
+
+const FORM_OPTIONS = [
+  "10-K",
+  "10-K/A",
+  "10-Q",
+  "10-Q/A",
+  "8-K",
+  "8-K/A",
+  "DEF 14A",
+  "3",
+  "4",
+  "5",
+].map((v) => ({ value: v, label: v }));
+
+const SECTION_ITEM_OPTIONS = [
+  { value: "1A", label: "1A Risk Factors" },
+  { value: "1", label: "1 Business" },
+  { value: "7", label: "7 MD&A" },
+  { value: "2", label: "2 MD&A (10-Q)" },
+  { value: "8K", label: "8-K body" },
+  { value: "PROXY", label: "Proxy" },
+];
+
+const YEAR_OPTIONS = Array.from({ length: 15 }, (_, i) => {
+  const y = String(2026 - i);
+  return { value: y, label: y };
+});
 
 type Health = { ok: boolean; service: string };
 type Company = {
@@ -56,6 +86,51 @@ type FilingRow = {
   form: string;
   filingDate: string;
   filingUrl: string;
+};
+type SearchResultRow = {
+  ticker: string;
+  sic?: string | null;
+  sicDescription?: string | null;
+  accessionNumber: string;
+  form: string;
+  filingDate: string;
+  filingUrl: string;
+  item?: string | null;
+  title?: string | null;
+  sectionId?: string | null;
+  snippet?: string | null;
+  hasText?: boolean;
+};
+type FilingDetail = {
+  filing: {
+    accessionNumber: string;
+    form: string;
+    filingDate: string;
+    filingUrl: string;
+    ticker: string;
+    name: string;
+    cik: string;
+    sic?: string | null;
+    sicDescription?: string | null;
+  };
+  sections: Array<{ id: string; item: string; title: string }>;
+  documents: Array<{
+    id: string;
+    kind: string;
+    documentType: string;
+    filename: string;
+  }>;
+};
+type MatrixCell = {
+  ticker: string;
+  name: string | null;
+  sectionId: string | null;
+  accessionNumber: string | null;
+  form: string | null;
+  filingDate: string | null;
+  filingUrl: string | null;
+  title: string | null;
+  snippet: string | null;
 };
 type ChatMessage = {
   key: string;
@@ -256,6 +331,10 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [ticker, setTicker] = useState("NVDA");
   const [peerSeed, setPeerSeed] = useState<string[]>(["NVDA", "AMD"]);
+  const [docAccession, setDocAccession] = useState<string | null>(null);
+  const [docFocusSectionId, setDocFocusSectionId] = useState<string | null>(
+    null,
+  );
   const [changeSeed, setChangeSeed] = useState<{
     ticker: string;
     item: string;
@@ -263,6 +342,11 @@ export default function App() {
     newer?: string;
     autoRun?: boolean;
   }>({ ticker: "NVDA", item: "1A" });
+
+  function openDocument(accession: string, sectionId?: string | null) {
+    setDocAccession(accession);
+    setDocFocusSectionId(sectionId ?? null);
+  }
 
   useEffect(() => {
     fetch("/api/health")
@@ -293,6 +377,8 @@ export default function App() {
             selectedKeys={[section]}
             items={[
               { key: "research", label: "Research brief" },
+              { key: "filings", label: "Filings" },
+              { key: "matrix", label: "Section matrix" },
               { key: "peers", label: "Peer metrics" },
               { key: "changes", label: "Filing changes" },
               { key: "evals", label: "Evals" },
@@ -345,6 +431,18 @@ export default function App() {
                 }}
               />
             )}
+            {section === "filings" && (
+              <FilingsScreen
+                onOpenDocument={openDocument}
+                onOpenPeers={(tickers) => {
+                  setPeerSeed(tickers);
+                  setSection("peers");
+                }}
+              />
+            )}
+            {section === "matrix" && (
+              <MatrixScreen onOpenDocument={openDocument} />
+            )}
             {section === "peers" && (
               <CompareScreen initialTickers={peerSeed} />
             )}
@@ -352,6 +450,24 @@ export default function App() {
               <ChangesScreen seed={changeSeed} />
             )}
             {section === "evals" && <EvalsScreen />}
+            <DocumentDrawer
+              accession={docAccession}
+              focusSectionId={docFocusSectionId}
+              onClose={() => {
+                setDocAccession(null);
+                setDocFocusSectionId(null);
+              }}
+              onOpenPeers={(tickers) => {
+                setPeerSeed(tickers);
+                setSection("peers");
+                setDocAccession(null);
+              }}
+              onOpenChanges={(seed) => {
+                setChangeSeed({ ...seed, autoRun: true });
+                setSection("changes");
+                setDocAccession(null);
+              }}
+            />
           </Content>
         </Layout>
       </Layout>
@@ -902,6 +1018,647 @@ function ResearchScreen({
           </Typography.Text>
         </Card>
       )}
+    </Space>
+  );
+}
+
+function FilingsScreen({
+  onOpenDocument,
+  onOpenPeers,
+}: {
+  onOpenDocument: (accession: string, sectionId?: string | null) => void;
+  onOpenPeers: (tickers: string[]) => void;
+}) {
+  const [companiesList, setCompaniesList] = useState<Company[]>([]);
+  const [ticker, setTicker] = useState<string | undefined>(undefined);
+  const [form, setForm] = useState<string | undefined>(undefined);
+  const [year, setYear] = useState<string | undefined>(undefined);
+  const [item, setItem] = useState<string | undefined>(undefined);
+  const [keywordDraft, setKeywordDraft] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [mode, setMode] = useState<string>("index");
+  const [rows, setRows] = useState<SearchResultRow[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    void fetch("/api/companies")
+      .then((r) => r.json())
+      .then((json: { companies: Company[] }) => setCompaniesList(json.companies));
+  }, []);
+
+  const runSearch = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (ticker) {
+        params.set("ticker", ticker);
+      }
+      if (form) {
+        params.set("form", form);
+      }
+      if (year) {
+        params.set("year", year);
+      }
+      if (item) {
+        params.set("item", item);
+      }
+      if (keyword.trim()) {
+        params.set("q", keyword.trim());
+      }
+      const res = await fetch(`/api/search?${params}`);
+      if (!res.ok) {
+        throw new Error(`Search failed (${res.status})`);
+      }
+      const json = (await res.json()) as {
+        mode: string;
+        results: SearchResultRow[];
+      };
+      setMode(json.mode);
+      setRows(json.results);
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "Search failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [ticker, form, year, item, keyword]);
+
+  useEffect(() => {
+    void runSearch();
+  }, [runSearch]);
+
+  function submitKeyword(value?: string) {
+    setKeyword((value ?? keywordDraft).trim());
+  }
+
+  return (
+    <Row gutter={16}>
+      <Col xs={24} md={6}>
+        <Card title="Filters" size="small">
+          <Space direction="vertical" style={{ width: "100%" }} size="middle">
+            <div>
+              <Typography.Text type="secondary">Company</Typography.Text>
+              <Select
+                allowClear
+                style={{ width: "100%", marginTop: 4 }}
+                placeholder="All companies"
+                value={ticker}
+                onChange={setTicker}
+                options={companiesList.map((c) => ({
+                  value: c.ticker,
+                  label: `${c.ticker} · ${c.name}`,
+                }))}
+              />
+            </div>
+            <div>
+              <Typography.Text type="secondary">Form</Typography.Text>
+              <Select
+                allowClear
+                style={{ width: "100%", marginTop: 4 }}
+                placeholder="Any form"
+                value={form}
+                onChange={setForm}
+                options={FORM_OPTIONS}
+              />
+            </div>
+            <div>
+              <Typography.Text type="secondary">Year</Typography.Text>
+              <Select
+                allowClear
+                style={{ width: "100%", marginTop: 4 }}
+                placeholder="Any year"
+                value={year}
+                onChange={setYear}
+                options={YEAR_OPTIONS}
+              />
+            </div>
+            <div>
+              <Typography.Text type="secondary">Section</Typography.Text>
+              <Select
+                allowClear
+                style={{ width: "100%", marginTop: 4 }}
+                placeholder="Any parsed section"
+                value={item}
+                onChange={setItem}
+                options={SECTION_ITEM_OPTIONS}
+              />
+            </div>
+            <div>
+              <Typography.Text type="secondary">Keywords</Typography.Text>
+              <Input.Search
+                style={{ marginTop: 4 }}
+                placeholder="Full-text in stored sections"
+                value={keywordDraft}
+                onChange={(e) => setKeywordDraft(e.target.value)}
+                onSearch={(v) => submitKeyword(v)}
+                enterButton="Search"
+              />
+            </div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Keyword and section filters only hit filings with downloaded text.
+              Forms 3/4/5 stay index-only.
+            </Typography.Text>
+            {ticker ? (
+              <Button
+                block
+                onClick={() =>
+                  onOpenPeers([
+                    ticker,
+                    ...companiesList
+                      .map((c) => c.ticker)
+                      .filter((t) => t !== ticker)
+                      .slice(0, 3),
+                  ])
+                }
+              >
+                Peer metrics for {ticker}
+              </Button>
+            ) : null}
+          </Space>
+        </Card>
+      </Col>
+      <Col xs={24} md={18}>
+        <Card
+          title={
+            mode === "keyword"
+              ? "Keyword results"
+              : mode === "section"
+                ? "Section results"
+                : "Filing index"
+          }
+          extra={<Tag>{rows.length} rows</Tag>}
+        >
+          <Table
+            size="small"
+            rowKey={(r) =>
+              `${r.accessionNumber}-${r.chunkId ?? r.sectionId ?? "index"}`
+            }
+            loading={loading}
+            dataSource={rows}
+            pagination={{ pageSize: 12 }}
+            onRow={(record) => ({
+              onClick: () =>
+                onOpenDocument(record.accessionNumber, record.sectionId),
+              style: { cursor: "pointer" },
+            })}
+            columns={[
+              { title: "Ticker", dataIndex: "ticker", width: 80 },
+              { title: "Form", dataIndex: "form", width: 90 },
+              { title: "Filed", dataIndex: "filingDate", width: 110 },
+              {
+                title: "Accession",
+                dataIndex: "accessionNumber",
+                width: 180,
+                ellipsis: true,
+              },
+              {
+                title: "SIC",
+                dataIndex: "sic",
+                width: 70,
+                render: (v: string | null | undefined) => v ?? "—",
+              },
+              {
+                title: "Item",
+                dataIndex: "item",
+                width: 70,
+                render: (v: string | null | undefined) => v ?? "—",
+              },
+              {
+                title: "Snippet / note",
+                render: (_, row) =>
+                  row.snippet ? (
+                    <Typography.Paragraph
+                      ellipsis={{ rows: 2 }}
+                      style={{ marginBottom: 0 }}
+                    >
+                      {row.snippet}
+                    </Typography.Paragraph>
+                  ) : row.hasText ? (
+                    <Tag color="blue">text stored</Tag>
+                  ) : (
+                    <Tag>index only</Tag>
+                  ),
+              },
+            ]}
+          />
+        </Card>
+      </Col>
+    </Row>
+  );
+}
+
+function DocumentDrawer({
+  accession,
+  focusSectionId,
+  onClose,
+  onOpenPeers,
+  onOpenChanges,
+}: {
+  accession: string | null;
+  focusSectionId: string | null;
+  onClose: () => void;
+  onOpenPeers: (tickers: string[]) => void;
+  onOpenChanges: (seed: {
+    ticker: string;
+    item: string;
+    older?: string;
+    newer?: string;
+  }) => void;
+}) {
+  const [detail, setDetail] = useState<FilingDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const [sectionBody, setSectionBody] = useState<string | null>(null);
+  const [activeDocId, setActiveDocId] = useState<string | null>(null);
+  const [docBody, setDocBody] = useState<string | null>(null);
+  const [bodyLoading, setBodyLoading] = useState(false);
+
+  useEffect(() => {
+    if (!accession) {
+      setDetail(null);
+      setActiveSectionId(null);
+      setSectionBody(null);
+      setActiveDocId(null);
+      setDocBody(null);
+      return;
+    }
+    setLoading(true);
+    void fetch(`/api/filings/${encodeURIComponent(accession)}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`Filing load failed (${res.status})`);
+        }
+        return (await res.json()) as FilingDetail;
+      })
+      .then((json) => {
+        setDetail(json);
+        const prefer =
+          focusSectionId &&
+          json.sections.some((s) => s.id === focusSectionId)
+            ? focusSectionId
+            : (json.sections[0]?.id ?? null);
+        setActiveSectionId(prefer);
+        setActiveDocId(null);
+        setDocBody(null);
+      })
+      .catch((cause: unknown) => {
+        message.error(
+          cause instanceof Error ? cause.message : "Filing load failed",
+        );
+      })
+      .finally(() => setLoading(false));
+  }, [accession, focusSectionId]);
+
+  useEffect(() => {
+    if (!activeSectionId) {
+      setSectionBody(null);
+      return;
+    }
+    setBodyLoading(true);
+    void fetch(`/api/sections/${activeSectionId}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error("Section load failed");
+        }
+        return (await res.json()) as { section: { body: string } };
+      })
+      .then((json) => setSectionBody(json.section.body))
+      .catch(() => setSectionBody(null))
+      .finally(() => setBodyLoading(false));
+  }, [activeSectionId]);
+
+  async function loadDocument(id: string) {
+    setActiveDocId(id);
+    setBodyLoading(true);
+    try {
+      const res = await fetch(`/api/documents/${id}`);
+      if (!res.ok) {
+        throw new Error("Document load failed");
+      }
+      const json = (await res.json()) as { document: { content: string } };
+      setDocBody(json.document.content);
+    } catch (cause) {
+      message.error(
+        cause instanceof Error ? cause.message : "Document load failed",
+      );
+      setDocBody(null);
+    } finally {
+      setBodyLoading(false);
+    }
+  }
+
+  const activeSection = detail?.sections.find((s) => s.id === activeSectionId);
+  const exhibits =
+    detail?.documents.filter((d) => d.kind === "exhibit") ?? [];
+  const primaryDocs =
+    detail?.documents.filter((d) => d.kind !== "exhibit") ?? [];
+
+  return (
+    <Drawer
+      width={720}
+      open={Boolean(accession)}
+      onClose={onClose}
+      title={
+        detail
+          ? `${detail.filing.ticker} · ${detail.filing.form} · ${detail.filing.filingDate}`
+          : "Filing"
+      }
+      extra={
+        detail ? (
+          <Space>
+            <Button
+              onClick={() =>
+                onOpenPeers([
+                  detail.filing.ticker,
+                  "AAPL",
+                  "AMD",
+                  "MSFT",
+                  "NVDA",
+                ]
+                  .filter((t, i, arr) => arr.indexOf(t) === i)
+                  .slice(0, 4))
+              }
+            >
+              Peer metrics
+            </Button>
+            <Button
+              type="primary"
+              disabled={!activeSection}
+              onClick={() => {
+                if (!detail || !activeSection) {
+                  return;
+                }
+                onOpenChanges({
+                  ticker: detail.filing.ticker,
+                  item: activeSection.item,
+                  newer: detail.filing.accessionNumber,
+                });
+              }}
+            >
+              Diff this section
+            </Button>
+          </Space>
+        ) : null
+      }
+    >
+      {loading || !detail ? (
+        <Spin />
+      ) : (
+        <Space direction="vertical" style={{ width: "100%" }} size="middle">
+          <div>
+            <Typography.Text strong>{detail.filing.name}</Typography.Text>
+            <br />
+            <Typography.Text type="secondary">
+              CIK {detail.filing.cik}
+              {detail.filing.sicDescription
+                ? ` · ${detail.filing.sicDescription}`
+                : ""}
+            </Typography.Text>
+            <br />
+            <a href={detail.filing.filingUrl} target="_blank" rel="noreferrer">
+              Open on EDGAR
+            </a>
+          </div>
+          <Tabs
+            items={[
+              {
+                key: "sections",
+                label: `Sections (${detail.sections.length})`,
+                children:
+                  detail.sections.length === 0 ? (
+                    <Typography.Text type="secondary">
+                      No parsed sections for this filing. Index-only rows and
+                      some forms have no stored narrative.
+                    </Typography.Text>
+                  ) : (
+                    <Space
+                      direction="vertical"
+                      style={{ width: "100%" }}
+                      size="middle"
+                    >
+                      <Select
+                        style={{ width: "100%" }}
+                        value={activeSectionId ?? undefined}
+                        onChange={setActiveSectionId}
+                        options={detail.sections.map((s) => ({
+                          value: s.id,
+                          label: `Item ${s.item} · ${s.title}`,
+                        }))}
+                      />
+                      {bodyLoading && !docBody ? (
+                        <Spin />
+                      ) : (
+                        <Typography.Paragraph
+                          style={{
+                            whiteSpace: "pre-wrap",
+                            maxHeight: "60vh",
+                            overflow: "auto",
+                          }}
+                        >
+                          {sectionBody ?? "No body"}
+                        </Typography.Paragraph>
+                      )}
+                    </Space>
+                  ),
+              },
+              {
+                key: "exhibits",
+                label: `Exhibits (${exhibits.length})`,
+                children:
+                  exhibits.length === 0 ? (
+                    <Typography.Text type="secondary">
+                      No EX-99 exhibits stored for this accession.
+                    </Typography.Text>
+                  ) : (
+                    <Space
+                      direction="vertical"
+                      style={{ width: "100%" }}
+                      size="middle"
+                    >
+                      {exhibits.map((d) => (
+                        <Button
+                          key={d.id}
+                          type={activeDocId === d.id ? "primary" : "default"}
+                          onClick={() => void loadDocument(d.id)}
+                        >
+                          {d.documentType} · {d.filename}
+                        </Button>
+                      ))}
+                      {activeDocId ? (
+                        bodyLoading ? (
+                          <Spin />
+                        ) : (
+                          <Typography.Paragraph
+                            style={{
+                              whiteSpace: "pre-wrap",
+                              maxHeight: "50vh",
+                              overflow: "auto",
+                            }}
+                          >
+                            {(docBody ?? "").slice(0, 80_000)}
+                          </Typography.Paragraph>
+                        )
+                      ) : null}
+                    </Space>
+                  ),
+              },
+              {
+                key: "primary",
+                label: `Documents (${primaryDocs.length})`,
+                children:
+                  primaryDocs.length === 0 ? (
+                    <Typography.Text type="secondary">
+                      No primary document text stored.
+                    </Typography.Text>
+                  ) : (
+                    <Space
+                      direction="vertical"
+                      style={{ width: "100%" }}
+                      size="middle"
+                    >
+                      {primaryDocs.map((d) => (
+                        <Button
+                          key={d.id}
+                          type={activeDocId === d.id ? "primary" : "default"}
+                          onClick={() => void loadDocument(d.id)}
+                        >
+                          {d.documentType} · {d.filename}
+                        </Button>
+                      ))}
+                      {activeDocId &&
+                      primaryDocs.some((d) => d.id === activeDocId) ? (
+                        bodyLoading ? (
+                          <Spin />
+                        ) : (
+                          <Typography.Paragraph
+                            style={{
+                              whiteSpace: "pre-wrap",
+                              maxHeight: "50vh",
+                              overflow: "auto",
+                            }}
+                          >
+                            {(docBody ?? "").slice(0, 80_000)}
+                          </Typography.Paragraph>
+                        )
+                      ) : null}
+                    </Space>
+                  ),
+              },
+            ]}
+          />
+        </Space>
+      )}
+    </Drawer>
+  );
+}
+
+function MatrixScreen({
+  onOpenDocument,
+}: {
+  onOpenDocument: (accession: string, sectionId?: string | null) => void;
+}) {
+  const [item, setItem] = useState("1A");
+  const [cells, setCells] = useState<MatrixCell[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async (nextItem: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/matrix?item=${encodeURIComponent(nextItem)}&tickers=NVDA,AAPL,AMD,MSFT`,
+      );
+      if (!res.ok) {
+        throw new Error(`Matrix failed (${res.status})`);
+      }
+      const json = (await res.json()) as { cells: MatrixCell[] };
+      setCells(json.cells);
+    } catch (cause) {
+      message.error(cause instanceof Error ? cause.message : "Matrix failed");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load(item);
+  }, [item, load]);
+
+  return (
+    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+      <Card>
+        <Flex justify="space-between" align="center" wrap gap={12}>
+          <div>
+            <Typography.Title level={3} style={{ margin: 0 }}>
+              Section matrix
+            </Typography.Title>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              Latest stored section per company. Empty cells mean that item was
+              never parsed for the ticker.
+            </Typography.Paragraph>
+          </div>
+          <Select
+            style={{ width: 220 }}
+            value={item}
+            onChange={setItem}
+            options={SECTION_ITEM_OPTIONS}
+          />
+        </Flex>
+      </Card>
+      <Spin spinning={loading}>
+        <Row gutter={16}>
+          {cells.map((cell) => (
+            <Col xs={24} md={12} xl={6} key={cell.ticker}>
+              <Card
+                size="small"
+                title={`${cell.ticker}${cell.name ? ` · ${cell.name}` : ""}`}
+                extra={
+                  cell.accessionNumber ? (
+                    <Button
+                      type="link"
+                      size="small"
+                      onClick={() =>
+                        onOpenDocument(
+                          cell.accessionNumber!,
+                          cell.sectionId,
+                        )
+                      }
+                    >
+                      Open
+                    </Button>
+                  ) : null
+                }
+              >
+                {cell.snippet ? (
+                  <>
+                    <Space wrap style={{ marginBottom: 8 }}>
+                      <Tag>{cell.form}</Tag>
+                      <Tag>{cell.filingDate}</Tag>
+                      <Tag>{cell.title}</Tag>
+                    </Space>
+                    <Typography.Paragraph
+                      ellipsis={{ rows: 8, expandable: true }}
+                      style={{ marginBottom: 0, cursor: "pointer" }}
+                      onClick={() =>
+                        cell.accessionNumber
+                          ? onOpenDocument(
+                              cell.accessionNumber,
+                              cell.sectionId,
+                            )
+                          : undefined
+                      }
+                    >
+                      {cell.snippet}
+                    </Typography.Paragraph>
+                  </>
+                ) : (
+                  <Typography.Text type="secondary">
+                    No stored {item} section
+                  </Typography.Text>
+                )}
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </Spin>
     </Space>
   );
 }

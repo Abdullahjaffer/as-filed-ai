@@ -64,6 +64,6 @@ pnpm dev
 
 **Primary:** Research brief — open a company, read filed XBRL metrics, ask citation-backed questions, inspect evidence, then jump to risk diffs or peer compares.
 
-Supporting screens: Peer metrics, Filing changes, Evals.
+Supporting screens: Filings (filter and keyword search over the filing index and stored sections, in-app document view), Section matrix (side-by-side latest section snippets), Peer metrics, Filing changes, Evals.
 
 Questions read Postgres only. Ingest is the only path that calls EDGAR.

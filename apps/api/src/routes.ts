@@ -1,9 +1,12 @@
 import {
+  chunks,
   companies,
+  documents,
   evalCases,
   evalRuns,
   facts,
   filings,
+  sections,
   traces,
 } from "@filing-desk/db";
 import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
@@ -294,6 +297,335 @@ export async function listFilings(req: Request, res: Response): Promise<void> {
     ticker,
     filings: rows,
   });
+}
+
+/**
+ * Filings index search, or keyword/section search over stored chunks.
+ * Keyword path uses Postgres full-text only (no embeddings).
+ */
+export async function searchFilingsCatalog(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const ticker = req.query.ticker
+    ? String(req.query.ticker).trim().toUpperCase()
+    : undefined;
+  const form = req.query.form ? String(req.query.form).trim() : undefined;
+  const year = req.query.year ? String(req.query.year).trim() : undefined;
+  const item = req.query.item ? String(req.query.item).trim() : undefined;
+  const q = req.query.q ? String(req.query.q).trim() : undefined;
+  const limit = 50;
+
+  const yearFilter = year
+    ? sql`extract(year from ${filings.filingDate}::date) = ${Number(year)}`
+    : undefined;
+  const tickerFilter = ticker ? eq(companies.ticker, ticker) : undefined;
+  const formFilter = form ? eq(filings.form, form) : undefined;
+
+  if (q || item) {
+    const rows = await db
+      .select({
+        ticker: companies.ticker,
+        sic: companies.sic,
+        sicDescription: companies.sicDescription,
+        accessionNumber: filings.accessionNumber,
+        form: filings.form,
+        filingDate: filings.filingDate,
+        filingUrl: filings.filingUrl,
+        item: sections.item,
+        title: sections.title,
+        sectionId: sections.id,
+        snippet: chunks.content,
+        chunkId: chunks.id,
+      })
+      .from(chunks)
+      .innerJoin(sections, eq(chunks.sectionId, sections.id))
+      .innerJoin(filings, eq(chunks.filingId, filings.id))
+      .innerJoin(companies, eq(chunks.companyId, companies.id))
+      .where(
+        and(
+          tickerFilter,
+          formFilter,
+          yearFilter,
+          item ? eq(sections.item, item) : undefined,
+          q
+            ? sql`to_tsvector('english', ${chunks.content}) @@ plainto_tsquery('english', ${q})`
+            : undefined,
+        ),
+      )
+      .orderBy(desc(filings.filingDate), chunks.ordinal)
+      .limit(limit);
+
+    res.json({
+      mode: q ? "keyword" : "section",
+      results: rows.map((row) => ({
+        ...row,
+        snippet: row.snippet.slice(0, 320),
+        hasText: true,
+      })),
+    });
+    return;
+  }
+
+  const rows = await db
+    .select({
+      ticker: companies.ticker,
+      sic: companies.sic,
+      sicDescription: companies.sicDescription,
+      accessionNumber: filings.accessionNumber,
+      form: filings.form,
+      filingDate: filings.filingDate,
+      filingUrl: filings.filingUrl,
+      reportDate: filings.reportDate,
+      primaryDocument: filings.primaryDocument,
+      hasText: sql<boolean>`exists (
+        select 1 from documents d where d.filing_id = ${filings.id}
+      )`,
+    })
+    .from(filings)
+    .innerJoin(companies, eq(filings.companyId, companies.id))
+    .where(and(tickerFilter, formFilter, yearFilter))
+    .orderBy(desc(filings.filingDate))
+    .limit(limit);
+
+  res.json({
+    mode: "index",
+    results: rows.map((row) => ({
+      ...row,
+      item: null,
+      title: null,
+      sectionId: null,
+      snippet: null,
+      chunkId: null,
+    })),
+  });
+}
+
+export async function getFilingDetail(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const accession = String(req.params.accession);
+  const [row] = await db
+    .select({
+      id: filings.id,
+      accessionNumber: filings.accessionNumber,
+      form: filings.form,
+      filingDate: filings.filingDate,
+      reportDate: filings.reportDate,
+      filingUrl: filings.filingUrl,
+      primaryDocument: filings.primaryDocument,
+      ticker: companies.ticker,
+      name: companies.name,
+      cik: companies.cik,
+      sic: companies.sic,
+      sicDescription: companies.sicDescription,
+    })
+    .from(filings)
+    .innerJoin(companies, eq(filings.companyId, companies.id))
+    .where(eq(filings.accessionNumber, accession))
+    .limit(1);
+
+  if (!row) {
+    res.status(404).json({ error: "Filing not found" });
+    return;
+  }
+
+  const sectionRows = await db
+    .select({
+      id: sections.id,
+      item: sections.item,
+      title: sections.title,
+    })
+    .from(sections)
+    .where(eq(sections.filingId, row.id))
+    .orderBy(sections.item);
+
+  const documentRows = await db
+    .select({
+      id: documents.id,
+      kind: documents.kind,
+      documentType: documents.documentType,
+      filename: documents.filename,
+    })
+    .from(documents)
+    .where(eq(documents.filingId, row.id))
+    .orderBy(documents.kind, documents.documentType);
+
+  const { id: _filingId, ...filing } = row;
+  res.json({
+    filing,
+    sections: sectionRows,
+    documents: documentRows,
+  });
+}
+
+export async function getSectionById(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const id = String(req.params.id);
+  const [row] = await db
+    .select({
+      id: sections.id,
+      item: sections.item,
+      title: sections.title,
+      body: sections.body,
+      accessionNumber: filings.accessionNumber,
+      form: filings.form,
+      filingDate: filings.filingDate,
+      filingUrl: filings.filingUrl,
+      ticker: companies.ticker,
+    })
+    .from(sections)
+    .innerJoin(filings, eq(sections.filingId, filings.id))
+    .innerJoin(companies, eq(sections.companyId, companies.id))
+    .where(eq(sections.id, id))
+    .limit(1);
+
+  if (!row) {
+    res.status(404).json({ error: "Section not found" });
+    return;
+  }
+  res.json({ section: row });
+}
+
+export async function getDocumentById(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const id = String(req.params.id);
+  const [row] = await db
+    .select({
+      id: documents.id,
+      kind: documents.kind,
+      documentType: documents.documentType,
+      filename: documents.filename,
+      content: documents.content,
+      sourceUrl: documents.sourceUrl,
+      accessionNumber: filings.accessionNumber,
+      form: filings.form,
+      filingDate: filings.filingDate,
+      filingUrl: filings.filingUrl,
+      ticker: companies.ticker,
+    })
+    .from(documents)
+    .innerJoin(filings, eq(documents.filingId, filings.id))
+    .innerJoin(companies, eq(filings.companyId, companies.id))
+    .where(eq(documents.id, id))
+    .limit(1);
+
+  if (!row) {
+    res.status(404).json({ error: "Document not found" });
+    return;
+  }
+  res.json({ document: row });
+}
+
+/** Latest stored section of an item per ticker, for side-by-side snippets. */
+export async function getSectionMatrix(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const item = String(req.query.item ?? "1A").trim();
+  const tickersRaw = req.query.tickers
+    ? String(req.query.tickers)
+    : "NVDA,AAPL,AMD,MSFT";
+  const tickers = tickersRaw
+    .split(",")
+    .map((t) => t.trim().toUpperCase())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  if (tickers.length === 0) {
+    res.status(400).json({ error: "tickers required" });
+    return;
+  }
+
+  const companyRows = await db
+    .select({
+      id: companies.id,
+      ticker: companies.ticker,
+      name: companies.name,
+    })
+    .from(companies)
+    .where(inArray(companies.ticker, tickers));
+
+  const byTicker = new Map(companyRows.map((c) => [c.ticker, c]));
+  const cells: Array<{
+    ticker: string;
+    name: string | null;
+    sectionId: string | null;
+    accessionNumber: string | null;
+    form: string | null;
+    filingDate: string | null;
+    filingUrl: string | null;
+    title: string | null;
+    snippet: string | null;
+  }> = [];
+
+  for (const ticker of tickers) {
+    const company = byTicker.get(ticker);
+    if (!company) {
+      cells.push({
+        ticker,
+        name: null,
+        sectionId: null,
+        accessionNumber: null,
+        form: null,
+        filingDate: null,
+        filingUrl: null,
+        title: null,
+        snippet: null,
+      });
+      continue;
+    }
+
+    const [section] = await db
+      .select({
+        id: sections.id,
+        title: sections.title,
+        body: sections.body,
+        accessionNumber: filings.accessionNumber,
+        form: filings.form,
+        filingDate: filings.filingDate,
+        filingUrl: filings.filingUrl,
+      })
+      .from(sections)
+      .innerJoin(filings, eq(sections.filingId, filings.id))
+      .where(and(eq(sections.companyId, company.id), eq(sections.item, item)))
+      .orderBy(desc(filings.filingDate))
+      .limit(1);
+
+    if (!section) {
+      cells.push({
+        ticker,
+        name: company.name,
+        sectionId: null,
+        accessionNumber: null,
+        form: null,
+        filingDate: null,
+        filingUrl: null,
+        title: null,
+        snippet: null,
+      });
+      continue;
+    }
+
+    cells.push({
+      ticker,
+      name: company.name,
+      sectionId: section.id,
+      accessionNumber: section.accessionNumber,
+      form: section.form,
+      filingDate: section.filingDate,
+      filingUrl: section.filingUrl,
+      title: section.title,
+      snippet: section.body.slice(0, 400),
+    });
+  }
+
+  res.json({ item, tickers, cells });
 }
 
 export async function listEvals(_req: Request, res: Response): Promise<void> {

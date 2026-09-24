@@ -13,6 +13,13 @@ Track progress here so a new chat knows what is done. Update after each mileston
   - UI: scorecard, analyst prompts (Welcome/Prompts), evidence panel, tool trace, filings
   - Deep links: Compare peers · Diff risk factors
 - [x] Peer metrics + Filing changes + Evals as supporting screens
+- [x] **Filings search + in-app document view**
+  - `GET /api/search` (index or full-text over chunks)
+  - `GET /api/filings/:accession`, `/api/sections/:id`, `/api/documents/:id`
+  - UI: filters → results grid → document drawer (sections / exhibits) → Diff / Peer metrics
+- [x] **Section matrix**
+  - `GET /api/matrix?item=&tickers=`
+  - Side-by-side latest stored section snippets across tickers
 
 ## Sample data
 
