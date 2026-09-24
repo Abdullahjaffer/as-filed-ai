@@ -365,7 +365,7 @@ export default function App() {
   return (
     <XProvider>
       <Layout style={{ minHeight: "100vh" }}>
-        <Sider breakpoint="lg" collapsedWidth={0} theme="light" width={228}>
+        <Sider theme="light" width={228} style={{ position: "sticky", top: 0, height: "100vh", overflow: "auto" }}>
           <Flex vertical style={{ height: 64, paddingInline: 20, justifyContent: "center" }}>
             <Typography.Text strong>Filing Desk</Typography.Text>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -421,6 +421,7 @@ export default function App() {
               <ResearchScreen
                 ticker={ticker}
                 onTicker={setTicker}
+                onOpenDocument={openDocument}
                 onOpenPeers={(tickers) => {
                   setPeerSeed(tickers);
                   setSection("peers");
@@ -478,11 +479,13 @@ export default function App() {
 function ResearchScreen({
   ticker,
   onTicker,
+  onOpenDocument,
   onOpenPeers,
   onOpenChanges,
 }: {
   ticker: string;
   onTicker: (t: string) => void;
+  onOpenDocument: (accession: string, sectionId?: string | null) => void;
   onOpenPeers: (tickers: string[]) => void;
   onOpenChanges: (seed: {
     ticker: string;
@@ -715,28 +718,54 @@ function ResearchScreen({
               </div>
               <Space wrap>
                 {brief.latest.tenK ? (
-                  <Tag>
+                  <Tag
+                    style={{ cursor: "pointer" }}
+                    onClick={() =>
+                      onOpenDocument(brief.latest.tenK!.accessionNumber)
+                    }
+                  >
                     10-K {brief.latest.tenK.filingDate}{" "}
-                    <a href={brief.latest.tenK.filingUrl} target="_blank" rel="noreferrer">
+                    <a
+                      href={brief.latest.tenK.filingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       EDGAR
                     </a>
                   </Tag>
                 ) : null}
                 {brief.latest.tenQ ? (
-                  <Tag>
+                  <Tag
+                    style={{ cursor: "pointer" }}
+                    onClick={() =>
+                      onOpenDocument(brief.latest.tenQ!.accessionNumber)
+                    }
+                  >
                     10-Q {brief.latest.tenQ.filingDate}{" "}
-                    <a href={brief.latest.tenQ.filingUrl} target="_blank" rel="noreferrer">
+                    <a
+                      href={brief.latest.tenQ.filingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       EDGAR
                     </a>
                   </Tag>
                 ) : null}
                 {brief.latest.eightK ? (
-                  <Tag>
+                  <Tag
+                    style={{ cursor: "pointer" }}
+                    onClick={() =>
+                      onOpenDocument(brief.latest.eightK!.accessionNumber)
+                    }
+                  >
                     8-K {brief.latest.eightK.filingDate}{" "}
                     <a
                       href={brief.latest.eightK.filingUrl}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
                     >
                       EDGAR
                     </a>
@@ -958,6 +987,10 @@ function ResearchScreen({
                           rowKey="accessionNumber"
                           pagination={{ pageSize: 8 }}
                           dataSource={bucket.filings}
+                          onRow={(row) => ({
+                            onClick: () => onOpenDocument(row.accessionNumber),
+                            style: { cursor: "pointer" },
+                          })}
                           columns={[
                             { title: "Form", dataIndex: "form", width: 90 },
                             {
@@ -966,11 +999,31 @@ function ResearchScreen({
                               width: 110,
                             },
                             {
+                              title: "View",
+                              render: (_, row) => (
+                                <Button
+                                  type="link"
+                                  size="small"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenDocument(row.accessionNumber);
+                                  }}
+                                >
+                                  open
+                                </Button>
+                              ),
+                            },
+                            {
                               title: "EDGAR",
                               dataIndex: "filingUrl",
                               render: (url: string) => (
-                                <a href={url} target="_blank" rel="noreferrer">
-                                  open
+                                <a
+                                  href={url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  edgar
                                 </a>
                               ),
                             },
@@ -1194,6 +1247,12 @@ function FilingsScreen({
             }
             loading={loading}
             dataSource={rows}
+            locale={{
+              emptyText:
+                keyword || item
+                  ? "No stored sections matched. Try another keyword, clear section filter, or browse the index without keywords (Forms 3/4/5 are index-only)."
+                  : "No filings matched these filters.",
+            }}
             pagination={{ pageSize: 12 }}
             onRow={(record) => ({
               onClick: () =>
@@ -1387,11 +1446,38 @@ function DocumentDrawer({
                 if (!detail || !activeSection) {
                   return;
                 }
-                onOpenChanges({
-                  ticker: detail.filing.ticker,
-                  item: activeSection.item,
-                  newer: detail.filing.accessionNumber,
-                });
+                void (async () => {
+                  let older: string | undefined;
+                  try {
+                    const res = await fetch(
+                      `/api/companies/${detail.filing.ticker}/filings`,
+                    );
+                    if (res.ok) {
+                      const json = (await res.json()) as {
+                        filings: FilingRow[];
+                      };
+                      const prior = json.filings.filter(
+                        (f) =>
+                          f.accessionNumber !==
+                            detail.filing.accessionNumber &&
+                          f.filingDate <= detail.filing.filingDate,
+                      );
+                      const prefer =
+                        prior.find((f) => f.form.startsWith("10-K")) ??
+                        prior.find((f) => f.form.startsWith("10-Q")) ??
+                        prior[0];
+                      older = prefer?.accessionNumber;
+                    }
+                  } catch {
+                    // optional older
+                  }
+                  onOpenChanges({
+                    ticker: detail.filing.ticker,
+                    item: activeSection.item,
+                    newer: detail.filing.accessionNumber,
+                    older,
+                  });
+                })();
               }}
             >
               Diff this section
@@ -1557,14 +1643,31 @@ function MatrixScreen({
   onOpenDocument: (accession: string, sectionId?: string | null) => void;
 }) {
   const [item, setItem] = useState("1A");
+  const [tickers, setTickers] = useState<string[]>([
+    "NVDA",
+    "AAPL",
+    "AMD",
+    "MSFT",
+  ]);
+  const [watchlist, setWatchlist] = useState<Company[]>([]);
   const [cells, setCells] = useState<MatrixCell[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async (nextItem: string) => {
+  useEffect(() => {
+    void fetch("/api/companies")
+      .then((r) => r.json())
+      .then((json: { companies: Company[] }) => setWatchlist(json.companies));
+  }, []);
+
+  const load = useCallback(async (nextItem: string, nextTickers: string[]) => {
+    if (nextTickers.length === 0) {
+      setCells([]);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/matrix?item=${encodeURIComponent(nextItem)}&tickers=NVDA,AAPL,AMD,MSFT`,
+        `/api/matrix?item=${encodeURIComponent(nextItem)}&tickers=${encodeURIComponent(nextTickers.join(","))}`,
       );
       if (!res.ok) {
         throw new Error(`Matrix failed (${res.status})`);
@@ -1579,28 +1682,41 @@ function MatrixScreen({
   }, []);
 
   useEffect(() => {
-    void load(item);
-  }, [item, load]);
+    void load(item, tickers);
+  }, [item, tickers, load]);
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <Card>
-        <Flex justify="space-between" align="center" wrap gap={12}>
+        <Flex justify="space-between" align="flex-start" wrap gap={12}>
           <div>
             <Typography.Title level={3} style={{ margin: 0 }}>
               Section matrix
             </Typography.Title>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
               Latest stored section per company. Empty cells mean that item was
-              never parsed for the ticker.
+              never parsed for the ticker (common for Item 1 and Item 7).
             </Typography.Paragraph>
           </div>
-          <Select
-            style={{ width: 220 }}
-            value={item}
-            onChange={setItem}
-            options={SECTION_ITEM_OPTIONS}
-          />
+          <Space wrap>
+            <Select
+              style={{ width: 220 }}
+              value={item}
+              onChange={setItem}
+              options={SECTION_ITEM_OPTIONS}
+            />
+            <Select
+              mode="multiple"
+              style={{ minWidth: 280 }}
+              placeholder="Tickers"
+              value={tickers}
+              onChange={(v) => setTickers(v.slice(0, 8))}
+              options={watchlist.map((c) => ({
+                value: c.ticker,
+                label: c.ticker,
+              }))}
+            />
+          </Space>
         </Flex>
       </Card>
       <Spin spinning={loading}>
@@ -1626,6 +1742,15 @@ function MatrixScreen({
                     </Button>
                   ) : null
                 }
+                onClick={() => {
+                  if (cell.accessionNumber) {
+                    onOpenDocument(cell.accessionNumber, cell.sectionId);
+                  }
+                }}
+                style={{
+                  cursor: cell.accessionNumber ? "pointer" : "default",
+                  minHeight: 220,
+                }}
               >
                 {cell.snippet ? (
                   <>
@@ -1636,22 +1761,14 @@ function MatrixScreen({
                     </Space>
                     <Typography.Paragraph
                       ellipsis={{ rows: 8, expandable: true }}
-                      style={{ marginBottom: 0, cursor: "pointer" }}
-                      onClick={() =>
-                        cell.accessionNumber
-                          ? onOpenDocument(
-                              cell.accessionNumber,
-                              cell.sectionId,
-                            )
-                          : undefined
-                      }
+                      style={{ marginBottom: 0 }}
                     >
                       {cell.snippet}
                     </Typography.Paragraph>
                   </>
                 ) : (
                   <Typography.Text type="secondary">
-                    No stored {item} section
+                    No stored Item {item} section for {cell.ticker}
                   </Typography.Text>
                 )}
               </Card>
@@ -1788,21 +1905,34 @@ function ChangesScreen({
   } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function loadFilings(t: string) {
+  async function loadFilings(t: string, preferOlder?: string, preferNewer?: string) {
     const res = await fetch(`/api/companies/${t}/filings`);
     if (!res.ok) {
       message.error("Load filings failed");
       return;
     }
     const json = (await res.json()) as { filings: FilingRow[] };
-    const tens = json.filings.filter((f) => f.form.startsWith("10-K"));
-    setFilings(tens);
-    if (!seed.newer && tens[0]) {
-      setNewer(tens[0].accessionNumber);
+    const narrative = json.filings.filter(
+      (f) =>
+        f.form.startsWith("10-K") ||
+        f.form.startsWith("10-Q") ||
+        f.form.startsWith("8-K") ||
+        f.form.startsWith("DEF"),
+    );
+    setFilings(narrative);
+
+    const nextNewer = preferNewer ?? newer ?? narrative[0]?.accessionNumber;
+    const nextOlder =
+      preferOlder ??
+      older ??
+      narrative.find((f) => f.accessionNumber !== nextNewer)?.accessionNumber;
+    if (!preferNewer && !newer && narrative[0]) {
+      setNewer(narrative[0].accessionNumber);
     }
-    if (!seed.older && tens[1]) {
-      setOlder(tens[1].accessionNumber);
+    if (!preferOlder && !older && nextOlder) {
+      setOlder(nextOlder);
     }
+    return { older: preferOlder ?? nextOlder, newer: preferNewer ?? nextNewer };
   }
 
   async function runDirectDiff(
@@ -1813,6 +1943,7 @@ function ChangesScreen({
     const it = overrides?.item ?? item;
     const tk = overrides?.ticker ?? ticker;
     if (!o || !n) {
+      message.warning("Pick an older and newer filing to diff");
       return;
     }
     setLoading(true);
@@ -1833,7 +1964,15 @@ function ChangesScreen({
       const json = (await res.json()) as {
         added?: string[];
         removed?: string[];
+        older?: { error?: string };
+        newer?: { error?: string };
       };
+      if (json.older && "error" in json.older) {
+        message.error(`Older filing: ${json.older.error}`);
+      }
+      if (json.newer && "error" in json.newer) {
+        message.error(`Newer filing: ${json.newer.error}`);
+      }
       setResult({
         added: json.added ?? [],
         removed: json.removed ?? [],
@@ -1850,11 +1989,12 @@ function ChangesScreen({
     setItem(seed.item);
     setOlder(seed.older);
     setNewer(seed.newer);
-    void loadFilings(seed.ticker).then(() => {
-      if (seed.autoRun && seed.older && seed.newer) {
+    setResult(null);
+    void loadFilings(seed.ticker, seed.older, seed.newer).then((picked) => {
+      if (seed.autoRun && picked?.older && picked?.newer) {
         void runDirectDiff({
-          older: seed.older,
-          newer: seed.newer,
+          older: picked.older,
+          newer: picked.newer,
           item: seed.item,
           ticker: seed.ticker,
         });
@@ -1864,11 +2004,31 @@ function ChangesScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed]);
 
+  const filingOptions = useMemo(() => {
+    const byAcc = new Map(filings.map((f) => [f.accessionNumber, f]));
+    for (const acc of [older, newer]) {
+      if (acc && !byAcc.has(acc)) {
+        byAcc.set(acc, {
+          accessionNumber: acc,
+          form: "seeded",
+          filingDate: "",
+          filingUrl: "",
+        });
+      }
+    }
+    return [...byAcc.values()].map((f) => ({
+      value: f.accessionNumber,
+      label: f.filingDate
+        ? `${f.filingDate} ${f.form}`
+        : `${f.form} ${f.accessionNumber}`,
+    }));
+  }, [filings, older, newer]);
+
   return (
     <Card title="Filing changes">
       <Typography.Paragraph type="secondary">
-        Compare the same section across two 10-Ks. Use this after a research
-        brief to see what Risk Factors or MD&A language changed.
+        Compare the same section across two filings. Use this after a research
+        brief or document view to see what Risk Factors or MD&A language changed.
       </Typography.Paragraph>
       <Space direction="vertical" style={{ width: "100%" }} size="middle">
         <Form layout="inline">
@@ -1884,35 +2044,25 @@ function ChangesScreen({
             <Select
               value={item}
               onChange={setItem}
-              style={{ width: 180 }}
-              options={[
-                { value: "1A", label: "1A Risk Factors" },
-                { value: "7", label: "7 MD&A" },
-                { value: "1", label: "1 Business" },
-              ]}
+              style={{ width: 200 }}
+              options={SECTION_ITEM_OPTIONS}
             />
           </Form.Item>
         </Form>
         <Space wrap>
           <Select
             style={{ width: 300 }}
-            placeholder="Older 10-K"
+            placeholder="Older filing"
             value={older}
             onChange={setOlder}
-            options={filings.map((f) => ({
-              value: f.accessionNumber,
-              label: `${f.filingDate} ${f.form}`,
-            }))}
+            options={filingOptions}
           />
           <Select
             style={{ width: 300 }}
-            placeholder="Newer 10-K"
+            placeholder="Newer filing"
             value={newer}
             onChange={setNewer}
-            options={filings.map((f) => ({
-              value: f.accessionNumber,
-              label: `${f.filingDate} ${f.form}`,
-            }))}
+            options={filingOptions}
           />
           <Button
             type="primary"
@@ -1929,16 +2079,30 @@ function ChangesScreen({
               {
                 key: "added",
                 label: `Appeared in newer filing (${result.added.length})`,
-                children: result.added.map((q, i) => (
-                  <Typography.Paragraph key={i}>{q}</Typography.Paragraph>
-                )),
+                children:
+                  result.added.length === 0 ? (
+                    <Typography.Text type="secondary">
+                      No added passages (section may be missing on one side).
+                    </Typography.Text>
+                  ) : (
+                    result.added.map((q, i) => (
+                      <Typography.Paragraph key={i}>{q}</Typography.Paragraph>
+                    ))
+                  ),
               },
               {
                 key: "removed",
                 label: `Dropped from newer filing (${result.removed.length})`,
-                children: result.removed.map((q, i) => (
-                  <Typography.Paragraph key={i}>{q}</Typography.Paragraph>
-                )),
+                children:
+                  result.removed.length === 0 ? (
+                    <Typography.Text type="secondary">
+                      No removed passages.
+                    </Typography.Text>
+                  ) : (
+                    result.removed.map((q, i) => (
+                      <Typography.Paragraph key={i}>{q}</Typography.Paragraph>
+                    ))
+                  ),
               },
             ]}
           />
