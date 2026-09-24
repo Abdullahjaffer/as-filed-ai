@@ -56,7 +56,9 @@ Vite proxies `/api` to port 4000.
 
 Agent tools: `resolveCompany`, `getFacts`, `searchFilings`, `readSection`, `compareFacts`, `diffSections`. All Zod-validated. All hit Postgres.
 
-UI read routes (no model): company search, financial strip, filing lists, eval results. Strip metrics come from `facts`.
+UI read routes (no model): company search, research brief, financial strip, filing lists, eval results. Strip metrics come from `facts`.
+
+Primary UX: Research brief → evidence → optional peers / filing changes.
 
 ## After each milestone
 

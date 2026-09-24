@@ -62,9 +62,8 @@ pnpm dev
 
 ## What the app does
 
-- **Company** — ticker dossier, XBRL strip, streaming Q&A with citations and tool traces
-- **Compare** — up to four tickers on one XBRL concept
-- **Changes** — diff Risk Factors / MD&A / Business across two accessions
-- **Evals** — latest `pnpm eval` results
+**Primary:** Research brief — open a company, read filed XBRL metrics, ask citation-backed questions, inspect evidence, then jump to risk diffs or peer compares.
+
+Supporting screens: Peer metrics, Filing changes, Evals.
 
 Questions read Postgres only. Ingest is the only path that calls EDGAR.

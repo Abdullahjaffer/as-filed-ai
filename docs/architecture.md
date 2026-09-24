@@ -2,7 +2,21 @@
 
 Filing Desk is a research tool over primary SEC filings. Numbers come from XBRL company facts. Narrative answers come from retrieved filing sections with citations.
 
-## Data flow
+## Primary use case
+
+**Grounded equity research brief.** An analyst opens one public company, reads an XBRL scorecard from filed facts, asks citation-backed questions about Business / Risk Factors / MD&A, inspects evidence, then optionally diffs year-over-year language or compares peer metrics.
+
+That is the product spine. Peer compare and filing diffs are supporting flows entered from the brief.
+
+```text
+Open ticker → XBRL scorecard + latest forms
+            → Analyst prompts / free-form ask
+            → Evidence (facts + quotes) + tool trace
+            → Diff risks  |  Compare peers
+```
+
+UI entry: **Research brief** (`apps/web`). API: `GET /api/companies/:ticker/brief` plus `POST /api/chat`.
+
 
 ```text
 SEC JSON APIs + submission .txt

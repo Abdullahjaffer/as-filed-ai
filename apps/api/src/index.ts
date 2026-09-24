@@ -10,6 +10,7 @@ import { chatHandler } from "./chat";
 import {
   getCompany,
   getFactStrip,
+  getResearchBrief,
   listEvals,
   listFilings,
   listTraces,
@@ -28,6 +29,7 @@ app.get("/api/health", (_request, response) => {
 
 app.get("/api/companies", searchCompanies);
 app.get("/api/companies/:ticker", getCompany);
+app.get("/api/companies/:ticker/brief", getResearchBrief);
 app.get("/api/companies/:ticker/facts/strip", getFactStrip);
 app.get("/api/companies/:ticker/filings", listFilings);
 app.get("/api/evals", listEvals);
