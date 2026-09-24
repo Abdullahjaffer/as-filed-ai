@@ -19,6 +19,7 @@ const STRIP_CONCEPTS = [
   "EarningsPerShareDiluted",
 ];
 
+
 export async function searchCompanies(req: Request, res: Response): Promise<void> {
   const q = String(req.query.q ?? "").trim();
   if (!q) {
@@ -97,8 +98,7 @@ export async function getResearchBrief(req: Request, res: Response): Promise<voi
     })
     .from(filings)
     .where(eq(filings.companyId, company.id))
-    .orderBy(desc(filings.filingDate))
-    .limit(120);
+    .orderBy(desc(filings.filingDate));
 
   const tens = allFilings.filter((f) => f.form.startsWith("10-K"));
   const qs = allFilings.filter((f) => f.form.startsWith("10-Q"));
@@ -124,7 +124,7 @@ export async function getResearchBrief(req: Request, res: Response): Promise<voi
       ),
     )
     .orderBy(desc(facts.endDate))
-    .limit(80);
+    .limit(2000);
 
   const pickAnnual = (concepts: string[]) =>
     factRows.find(
@@ -153,6 +153,10 @@ export async function getResearchBrief(req: Request, res: Response): Promise<voi
     .orderBy(companies.ticker)
     .limit(8);
 
+  const filingsByYear = groupFilingsByYear(allFilings);
+
+  const annualTimeline = buildAnnualTimeline(factRows);
+
   res.json({
     company: {
       ticker: company.ticker,
@@ -163,6 +167,7 @@ export async function getResearchBrief(req: Request, res: Response): Promise<voi
       filingCount: allFilings.length,
     },
     metrics,
+    annualTimeline,
     latest: {
       tenK: tens[0] ?? null,
       tenQ: qs[0] ?? null,
@@ -174,7 +179,14 @@ export async function getResearchBrief(req: Request, res: Response): Promise<voi
       item: "1A",
     },
     peers,
-    filings: allFilings.slice(0, 40),
+    filings: allFilings.slice(0, 80),
+    filingsByYear,
+    window: {
+      years: null,
+      since: allFilings.at(-1)?.filingDate ?? null,
+      through: allFilings[0]?.filingDate ?? null,
+      filingCount: allFilings.length,
+    },
     prompts: [
       {
         key: "metrics",
@@ -249,6 +261,7 @@ export async function listFilings(req: Request, res: Response): Promise<void> {
     return;
   }
   const form = req.query.form ? String(req.query.form) : undefined;
+  const year = req.query.year ? String(req.query.year) : undefined;
   const rows = await db
     .select({
       accessionNumber: filings.accessionNumber,
@@ -263,11 +276,24 @@ export async function listFilings(req: Request, res: Response): Promise<void> {
       and(
         eq(filings.companyId, company.id),
         form ? eq(filings.form, form) : undefined,
+        year
+          ? sql`extract(year from ${filings.filingDate}::date) = ${Number(year)}`
+          : undefined,
       ),
     )
-    .orderBy(desc(filings.filingDate))
-    .limit(100);
-  res.json({ ticker, filings: rows });
+    .orderBy(desc(filings.filingDate));
+
+  if (req.query.group === "year") {
+    res.json({
+      ticker,
+      filingsByYear: groupFilingsByYear(rows),
+    });
+    return;
+  }
+  res.json({
+    ticker,
+    filings: rows,
+  });
 }
 
 export async function listEvals(_req: Request, res: Response): Promise<void> {
@@ -310,3 +336,103 @@ export async function listTraces(req: Request, res: Response): Promise<void> {
     .orderBy(traces.stepIndex);
   res.json({ conversationId, traces: rows });
 }
+
+type FilingListRow = {
+  accessionNumber: string;
+  form: string;
+  filingDate: string;
+  reportDate?: string | null;
+  filingUrl: string;
+  primaryDocument?: string | null;
+};
+
+type FactListRow = {
+  concept: string;
+  value: string;
+  unit: string;
+  endDate: string | null;
+  form: string | null;
+  fiscalYear: number | null;
+  fiscalPeriod: string | null;
+  accessionNumber?: string;
+};
+
+function groupFilingsByYear(rows: FilingListRow[]) {
+  const map = new Map<
+    string,
+    {
+      year: string;
+      count: number;
+      forms: Record<string, number>;
+      filings: FilingListRow[];
+    }
+  >();
+  for (const row of rows) {
+    const year = (row.filingDate ?? "").slice(0, 4) || "unknown";
+    const bucket = map.get(year) ?? {
+      year,
+      count: 0,
+      forms: {},
+      filings: [],
+    };
+    bucket.count += 1;
+    const formKey = row.form.split("/")[0];
+    bucket.forms[formKey] = (bucket.forms[formKey] ?? 0) + 1;
+    bucket.filings.push(row);
+    map.set(year, bucket);
+  }
+  return [...map.values()].sort((a, b) => b.year.localeCompare(a.year));
+}
+
+function buildAnnualTimeline(factRows: FactListRow[]) {
+  const byYear = new Map<
+    number,
+    {
+      year: number;
+      revenue?: FactListRow;
+      operatingIncome?: FactListRow;
+      netIncome?: FactListRow;
+      dilutedEps?: FactListRow;
+    }
+  >();
+
+  const consider = (
+    concepts: string[],
+    field: "revenue" | "operatingIncome" | "netIncome" | "dilutedEps",
+  ) => {
+    for (const row of factRows) {
+      if (!concepts.includes(row.concept)) {
+        continue;
+      }
+      if (!(row.form ?? "").includes("10-K") && row.fiscalPeriod !== "FY") {
+        continue;
+      }
+      const year =
+        row.fiscalYear ??
+        (row.endDate ? Number(row.endDate.slice(0, 4)) : NaN);
+      if (!Number.isFinite(year)) {
+        continue;
+      }
+      const bucket = byYear.get(year) ?? { year };
+      if (!bucket[field]) {
+        bucket[field] = row;
+        byYear.set(year, bucket);
+      }
+    }
+  };
+
+  consider(
+    [
+      "Revenues",
+      "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "SalesRevenueNet",
+    ],
+    "revenue",
+  );
+  consider(["OperatingIncomeLoss"], "operatingIncome");
+  consider(["NetIncomeLoss"], "netIncome");
+  consider(["EarningsPerShareDiluted"], "dilutedEps");
+
+  return [...byYear.values()].sort((a, b) => b.year - a.year);
+}
+

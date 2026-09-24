@@ -79,6 +79,13 @@ type BriefPayload = {
     netIncome: FactRow | null;
     dilutedEps: FactRow | null;
   };
+  annualTimeline?: Array<{
+    year: number;
+    revenue?: FactRow;
+    operatingIncome?: FactRow;
+    netIncome?: FactRow;
+    dilutedEps?: FactRow;
+  }>;
   latest: {
     tenK: FilingRow | null;
     tenQ: FilingRow | null;
@@ -91,6 +98,18 @@ type BriefPayload = {
   };
   peers: Company[];
   filings: FilingRow[];
+  filingsByYear?: Array<{
+    year: string;
+    count: number;
+    forms: Record<string, number>;
+    filings: FilingRow[];
+  }>;
+  window?: {
+    years: number | null;
+    since: string | null;
+    through?: string | null;
+    filingCount?: number;
+  };
   prompts: PromptItem[];
 };
 type EvidenceItem = {
@@ -728,6 +747,124 @@ function ResearchScreen({
                   </Space>
                 )}
               </Card>
+              <Card
+                title={
+                  brief.window?.since && brief.window?.through
+                    ? `Annual XBRL timeline · ${brief.window.since.slice(0, 4)}–${brief.window.through.slice(0, 4)}`
+                    : "Annual XBRL timeline · all years"
+                }
+                style={{ marginBottom: 16 }}
+              >
+                <Table
+                  size="small"
+                  rowKey="year"
+                  pagination={false}
+                  dataSource={brief.annualTimeline ?? []}
+                  locale={{ emptyText: "No annual facts yet" }}
+                  columns={[
+                    { title: "Year", dataIndex: "year", width: 70 },
+                    {
+                      title: "Revenue",
+                      render: (_, row) =>
+                        row.revenue
+                          ? formatMoney(row.revenue.value, row.revenue.unit)
+                          : "—",
+                    },
+                    {
+                      title: "Op. income",
+                      render: (_, row) =>
+                        row.operatingIncome
+                          ? formatMoney(
+                              row.operatingIncome.value,
+                              row.operatingIncome.unit,
+                            )
+                          : "—",
+                    },
+                    {
+                      title: "Net income",
+                      render: (_, row) =>
+                        row.netIncome
+                          ? formatMoney(row.netIncome.value, row.netIncome.unit)
+                          : "—",
+                    },
+                    {
+                      title: "EPS",
+                      render: (_, row) =>
+                        row.dilutedEps
+                          ? formatMoney(
+                              row.dilutedEps.value,
+                              row.dilutedEps.unit,
+                            )
+                          : "—",
+                    },
+                  ]}
+                />
+              </Card>
+              <Card
+                title={
+                  brief.window?.since && brief.window?.through
+                    ? `Filings by year · ${brief.window.since.slice(0, 4)}–${brief.window.through.slice(0, 4)} (${brief.window.filingCount ?? brief.filingsByYear?.reduce((n, b) => n + b.count, 0) ?? 0})`
+                    : "Filings by year · all available"
+                }
+                style={{ marginBottom: 16 }}
+              >
+                {(brief.filingsByYear ?? []).length === 0 ? (
+                  <Typography.Text type="secondary">
+                    No filings indexed.
+                  </Typography.Text>
+                ) : (
+                  <Collapse
+                    size="small"
+                    defaultActiveKey={
+                      brief.filingsByYear?.[0]
+                        ? [brief.filingsByYear[0].year]
+                        : []
+                    }
+                    items={(brief.filingsByYear ?? []).map((bucket) => ({
+                      key: bucket.year,
+                      label: (
+                        <Space wrap>
+                          <Typography.Text strong>{bucket.year}</Typography.Text>
+                          <Tag>{bucket.count} filings</Tag>
+                          {Object.entries(bucket.forms)
+                            .sort((a, b) => b[1] - a[1])
+                            .slice(0, 5)
+                            .map(([form, n]) => (
+                              <Tag key={form}>
+                                {form} ×{n}
+                              </Tag>
+                            ))}
+                        </Space>
+                      ),
+                      children: (
+                        <Table
+                          size="small"
+                          rowKey="accessionNumber"
+                          pagination={{ pageSize: 8 }}
+                          dataSource={bucket.filings}
+                          columns={[
+                            { title: "Form", dataIndex: "form", width: 90 },
+                            {
+                              title: "Filed",
+                              dataIndex: "filingDate",
+                              width: 110,
+                            },
+                            {
+                              title: "EDGAR",
+                              dataIndex: "filingUrl",
+                              render: (url: string) => (
+                                <a href={url} target="_blank" rel="noreferrer">
+                                  open
+                                </a>
+                              ),
+                            },
+                          ]}
+                        />
+                      ),
+                    }))}
+                  />
+                )}
+              </Card>
               <Card title="Tool trace" style={{ marginBottom: 16 }}>
                 {traces.length === 0 ? (
                   <Typography.Text type="secondary">
@@ -754,27 +891,6 @@ function ResearchScreen({
                     }))}
                   />
                 )}
-              </Card>
-              <Card title="Recent filings">
-                <Table
-                  size="small"
-                  rowKey="accessionNumber"
-                  pagination={{ pageSize: 5 }}
-                  dataSource={brief.filings}
-                  columns={[
-                    { title: "Form", dataIndex: "form", width: 80 },
-                    { title: "Filed", dataIndex: "filingDate", width: 100 },
-                    {
-                      title: "EDGAR",
-                      dataIndex: "filingUrl",
-                      render: (url: string) => (
-                        <a href={url} target="_blank" rel="noreferrer">
-                          open
-                        </a>
-                      ),
-                    },
-                  ]}
-                />
               </Card>
             </Col>
           </Row>

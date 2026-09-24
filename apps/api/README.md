@@ -8,9 +8,8 @@ Express 5 API in TypeScript. Loads `.env` from the repo root. Talks to Postgres 
 | --- | --- | --- |
 | `GET` | `/api/health` | `{ ok, service }` |
 | `GET` | `/api/companies?q=` | Search tickers / names |
-| `GET` | `/api/companies/:ticker/brief` | Research dossier: metrics, latest forms, prompts, peers, risk-diff accessions |
-| `GET` | `/api/companies/:ticker/facts/strip` | Revenue, operating income, net income, diluted EPS series |
-| `GET` | `/api/companies/:ticker/filings` | Filing list (`?form=10-K` optional) |
+| `GET` | `/api/companies/:ticker/brief` | Research dossier: metrics, annual timeline, filings-by-year, prompts, peers |
+| `GET` | `/api/companies/:ticker/filings` | Filing list (`?form=`, `?year=2024`, `?group=year`) |
 | `POST` | `/api/diff` | Section diff (`ticker`, `item`, `olderAccession`, `newerAccession`) |
 | `POST` | `/api/chat` | Streaming tool-using agent (UI message stream) |
 | `GET` | `/api/conversations/:id/traces` | Tool steps for a conversation |
