@@ -1,0 +1,12 @@
+{
+  "name": "filing-desk",
+  "private": true,
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @filing-desk/web --filter @filing-desk/api dev",
+    "dev:web": "pnpm --filter @filing-desk/web dev",
+    "dev:api": "pnpm --filter @filing-desk/api dev",
+    "build": "pnpm -r --if-present build",
+    "db:push": "pnpm --filter @filing-desk/db push"
+  }
+}

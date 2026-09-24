@@ -1,0 +1,15 @@
+# Local Postgres for Filing Desk. The image includes pgvector.
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: filing
+      POSTGRES_PASSWORD: filing
+      POSTGRES_DB: filing_desk
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

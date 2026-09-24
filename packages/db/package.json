@@ -1,0 +1,20 @@
+{
+  "name": "@filing-desk/db",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "push": "drizzle-kit push"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.6",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.5",
+    "typescript": "~6.0.2"
+  }
+}
