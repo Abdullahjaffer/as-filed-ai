@@ -10,7 +10,7 @@ Express 5 API in TypeScript. Loads `.env` from the repo root. Talks to Postgres 
 | `GET` | `/api/companies?q=` | Search tickers / names |
 | `GET` | `/api/companies/:ticker/brief` | Research dossier: metrics, annual timeline, filings-by-year, prompts, peers |
 | `GET` | `/api/companies/:ticker/filings` | Filing list (`?form=`, `?year=2024`, `?group=year`) |
-| `GET` | `/api/search` | Filing index or keyword/section search (`ticker`, `form`, `year`, `item`, `q`) |
+| `GET` | `/api/search` | Filing index, one level-0 section per filing, or best keyword hit per filing (`ticker`, `form`, `year`, `item`, `q`, `text=1`) |
 | `GET` | `/api/filings/:accession` | Filing meta + section tree and document list (no bodies) |
 | `GET` | `/api/sections/:id` | Stored section body |
 | `GET` | `/api/documents/:id` | Stored document/exhibit text |

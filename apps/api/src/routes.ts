@@ -9,7 +9,7 @@ import {
   sections,
   traces,
 } from "@filing-desk/db";
-import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, like, or, sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { db } from "./db";
 
@@ -314,15 +314,68 @@ export async function searchFilingsCatalog(
   const year = req.query.year ? String(req.query.year).trim() : undefined;
   const item = req.query.item ? String(req.query.item).trim() : undefined;
   const q = req.query.q ? String(req.query.q).trim() : undefined;
+  const textOnly = req.query.text === "1";
   const limit = 50;
 
   const yearFilter = year
     ? sql`extract(year from ${filings.filingDate}::date) = ${Number(year)}`
     : undefined;
   const tickerFilter = ticker ? eq(companies.ticker, ticker) : undefined;
-  const formFilter = form ? eq(filings.form, form) : undefined;
+  const formFilter = form
+    ? form.includes("/")
+      ? eq(filings.form, form)
+      : or(eq(filings.form, form), like(filings.form, `${form}/%`))
+    : undefined;
+  const textFilter = textOnly
+    ? sql`exists (select 1 from documents d where d.filing_id = ${filings.id})`
+    : undefined;
 
-  if (q || item) {
+  if (item && !q) {
+    const rows = await db
+      .select({
+        ticker: companies.ticker,
+        sic: companies.sic,
+        sicDescription: companies.sicDescription,
+        accessionNumber: filings.accessionNumber,
+        form: filings.form,
+        filingDate: filings.filingDate,
+        filingUrl: filings.filingUrl,
+        item: sections.item,
+        title: sections.title,
+        sectionId: sections.id,
+        snippet: sql<string>`left(${sections.body}, 320)`,
+      })
+      .from(sections)
+      .innerJoin(filings, eq(sections.filingId, filings.id))
+      .innerJoin(companies, eq(sections.companyId, companies.id))
+      .where(
+        and(
+          tickerFilter,
+          formFilter,
+          yearFilter,
+          textFilter,
+          eq(sections.level, 0),
+          eq(sections.item, item),
+        ),
+      )
+      .orderBy(desc(filings.filingDate))
+      .limit(limit);
+
+    res.json({
+      mode: "section",
+      results: rows.map((row) => ({
+        ...row,
+        chunkId: null,
+        hasText: true,
+      })),
+    });
+    return;
+  }
+
+  if (q) {
+    const rank = q
+      ? sql<number>`ts_rank(to_tsvector('english', ${chunks.content}), plainto_tsquery('english', ${q}))`
+      : sql<number>`0`;
     const rows = await db
       .select({
         ticker: companies.ticker,
@@ -337,6 +390,7 @@ export async function searchFilingsCatalog(
         sectionId: sections.id,
         snippet: chunks.content,
         chunkId: chunks.id,
+        rank,
       })
       .from(chunks)
       .innerJoin(sections, eq(chunks.sectionId, sections.id))
@@ -347,18 +401,33 @@ export async function searchFilingsCatalog(
           tickerFilter,
           formFilter,
           yearFilter,
+          textFilter,
           item ? eq(sections.item, item) : undefined,
           q
             ? sql`to_tsvector('english', ${chunks.content}) @@ plainto_tsquery('english', ${q})`
             : undefined,
         ),
       )
-      .orderBy(desc(filings.filingDate), chunks.ordinal)
-      .limit(limit);
+      .orderBy(desc(rank), desc(filings.filingDate))
+      .limit(200);
+
+    const seen = new Set<string>();
+    const deduped = [];
+    for (const row of rows) {
+      const key = row.accessionNumber;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      deduped.push(row);
+      if (deduped.length >= limit) {
+        break;
+      }
+    }
 
     res.json({
-      mode: q ? "keyword" : "section",
-      results: rows.map((row) => ({
+      mode: "keyword",
+      results: deduped.map(({ rank: _rank, ...row }) => ({
         ...row,
         snippet: row.snippet.slice(0, 320),
         hasText: true,
@@ -384,7 +453,7 @@ export async function searchFilingsCatalog(
     })
     .from(filings)
     .innerJoin(companies, eq(filings.companyId, companies.id))
-    .where(and(tickerFilter, formFilter, yearFilter))
+    .where(and(tickerFilter, formFilter, yearFilter, textFilter))
     .orderBy(desc(filings.filingDate))
     .limit(limit);
 

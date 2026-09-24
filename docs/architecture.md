@@ -94,7 +94,7 @@ System prompt: use tools for every figure and quote; cite form, date, accession 
 | GET | `/api/companies/:ticker/brief` | Research brief payload |
 | GET | `/api/companies/:ticker/facts/strip` | Revenue, operating income, net income, diluted EPS series |
 | GET | `/api/companies/:ticker/filings` | Filing list |
-| GET | `/api/search` | Filing index or keyword/section search (`ticker`, `form`, `year`, `item`, `q`) |
+| GET | `/api/search` | Filing index, level-0 section, or best keyword hit (`ticker`, `form`, `year`, `item`, `q`, `text=1`). A base form such as `10-K` includes amendments. |
 | GET | `/api/filings/:accession` | Filing meta, section tree, document list (no bodies) |
 | GET | `/api/sections/:id` | Stored section body |
 | GET | `/api/documents/:id` | Stored document/exhibit text |
@@ -105,7 +105,7 @@ System prompt: use tools for every figure and quote; cite form, date, accession 
 
 ## UI
 
-Ant Design layout in `apps/web`. Ant Design X for chat bubbles, sender, and tool-trace display. Screens: Research brief, Filings (filters + results + document viewer with the outline on the left and the filing text on the right), Section matrix, Peer metrics (≤4 tickers), Filing changes (two filings + section item), Evals. Matrix, diffs, and `readSection` use level-0 items.
+Ant Design layout in `apps/web`. Ant Design X for chat bubbles, sender, and tool-trace display. Screens: Research brief, Filings (filters + results), Document (outline on the left, filing text on the right), Compare filings (two documents side by side), Section matrix, Peer metrics (≤4 tickers), Filing changes (two filings + section item), Evals. Document opens from a filing row. Compare and Create matrix sit on a toolbar above the filings grid and run on the selected filings. Matrix, diffs, and `readSection` use level-0 items.
 
 ## Evals
 

@@ -4,17 +4,16 @@ import {
   Card,
   Col,
   Collapse,
-  Drawer,
   Flex,
   Form,
   Input,
   Layout,
-  Menu,
   Modal,
   Row,
   Select,
   Space,
   Spin,
+  Switch,
   Statistic,
   Steps,
   Table,
@@ -33,9 +32,23 @@ import {
 } from "@ant-design/x";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-const { Header, Sider, Content } = Layout;
+const { Header, Content } = Layout;
 
-type SectionKey = "research" | "filings" | "matrix" | "peers" | "changes" | "evals";
+const NAV_ITEMS: Array<{ key: SectionKey; label: string }> = [
+  { key: "research", label: "Research brief" },
+  { key: "filings", label: "View filings" },
+  { key: "matrix", label: "Matrix" },
+];
+
+type SectionKey =
+  | "research"
+  | "filings"
+  | "matrix"
+  | "peers"
+  | "changes"
+  | "evals"
+  | "document"
+  | "compare";
 
 const FORM_OPTIONS = [
   "10-K",
@@ -58,6 +71,47 @@ const SECTION_ITEM_OPTIONS = [
   { value: "8K", label: "8-K body" },
   { value: "PROXY", label: "Proxy" },
 ];
+
+const SECTION_GROUPS: { form: string; options: { item: string; label: string }[] }[] = [
+  {
+    form: "10-K",
+    options: [
+      { item: "1", label: "1 Business" },
+      { item: "1A", label: "1A Risk Factors" },
+      { item: "1C", label: "1C Cybersecurity" },
+      { item: "7", label: "7 MD&A" },
+      { item: "7A", label: "7A Market risk" },
+      { item: "8", label: "8 Financial statements" },
+    ],
+  },
+  {
+    form: "10-Q",
+    options: [
+      { item: "1", label: "1 Financial statements" },
+      { item: "1A", label: "1A Risk Factors" },
+      { item: "2", label: "2 MD&A" },
+      { item: "3", label: "3 Market risk" },
+      { item: "4", label: "4 Controls" },
+    ],
+  },
+  {
+    form: "8-K",
+    options: [
+      { item: "2.02", label: "2.02 Results of operations" },
+      { item: "7.01", label: "7.01 Regulation FD" },
+      { item: "8.01", label: "8.01 Other events" },
+      { item: "9.01", label: "9.01 Exhibits" },
+    ],
+  },
+  {
+    form: "DEF 14A",
+    options: [{ item: "PROXY", label: "Proxy statement" }],
+  },
+];
+
+function baseFormName(form: string | undefined): string | undefined {
+  return form?.split("/")[0];
+}
 
 const YEAR_OPTIONS = Array.from({ length: 15 }, (_, i) => {
   const y = String(2026 - i);
@@ -358,6 +412,7 @@ async function readChatStream(
 
 export default function App() {
   const [section, setSection] = useState<SectionKey>("research");
+  const [returnTo, setReturnTo] = useState<SectionKey>("filings");
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ticker, setTicker] = useState("NVDA");
@@ -366,6 +421,12 @@ export default function App() {
   const [docFocusSectionId, setDocFocusSectionId] = useState<string | null>(
     null,
   );
+  const [compareLeft, setCompareLeft] = useState<string | null>(null);
+  const [compareRight, setCompareRight] = useState<string | null>(null);
+  const [compareLeftSectionId, setCompareLeftSectionId] = useState<
+    string | null
+  >(null);
+  const [matrixSeed, setMatrixSeed] = useState<string[]>([]);
   const [changeSeed, setChangeSeed] = useState<{
     ticker: string;
     item: string;
@@ -375,8 +436,23 @@ export default function App() {
   }>({ ticker: "NVDA", item: "1A" });
 
   function openDocument(accession: string, sectionId?: string | null) {
+    if (section !== "document" && section !== "compare") {
+      setReturnTo(section);
+    }
     setDocAccession(accession);
     setDocFocusSectionId(sectionId ?? null);
+    setSection("document");
+  }
+
+  function openCompare(
+    left: string,
+    right?: string | null,
+    leftSectionId?: string | null,
+  ) {
+    setCompareLeft(left);
+    setCompareRight(right ?? null);
+    setCompareLeftSectionId(leftSectionId ?? null);
+    setSection("compare");
   }
 
   useEffect(() => {
@@ -396,44 +472,49 @@ export default function App() {
   return (
     <XProvider>
       <Layout style={{ minHeight: "100vh" }}>
-        <Sider theme="light" width={228} style={{ position: "sticky", top: 0, height: "100vh", overflow: "auto" }}>
-          <Flex vertical style={{ height: 64, paddingInline: 20, justifyContent: "center" }}>
-            <Typography.Text strong>Filing Desk</Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              Equity research from EDGAR
-            </Typography.Text>
-          </Flex>
-          <Menu
-            mode="inline"
-            selectedKeys={[section]}
-            items={[
-              { key: "research", label: "Research brief" },
-              { key: "filings", label: "Filings" },
-              { key: "matrix", label: "Section matrix" },
-              { key: "peers", label: "Peer metrics" },
-              { key: "changes", label: "Filing changes" },
-              { key: "evals", label: "Evals" },
-            ]}
-            onClick={({ key }) => setSection(key as SectionKey)}
-          />
-        </Sider>
-        <Layout>
           <Header
             style={{
               background: "#fff",
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 8,
               paddingInline: 24,
+              height: "auto",
+              lineHeight: "normal",
+              borderBottom: "1px solid #f0f0f0",
             }}
           >
-            <Typography.Text type="secondary">
-              Numbers from XBRL · narrative from filed sections · every claim cited
+            <Typography.Text strong style={{ marginRight: 16 }}>
+              Filing Desk
             </Typography.Text>
+            <nav style={{ display: "flex", flexWrap: "nowrap", gap: 4 }}>
+              {NAV_ITEMS.map((item) => {
+                const active = section === item.key;
+                return (
+                  <Button
+                    key={item.key}
+                    type="text"
+                    onClick={() => setSection(item.key)}
+                    style={{
+                      fontWeight: active ? 600 : 400,
+                      color: active ? "#1677ff" : undefined,
+                    }}
+                  >
+                    {item.label}
+                  </Button>
+                );
+              })}
+            </nav>
             {health ? (
-              <Tag color="success">{health.service}</Tag>
+              <Tag color="success" style={{ marginLeft: "auto" }}>
+                {health.service}
+              </Tag>
             ) : (
-              <Tag color={error ? "error" : "processing"}>
+              <Tag
+                color={error ? "error" : "processing"}
+                style={{ marginLeft: "auto" }}
+              >
                 {error ?? "Checking API"}
               </Tag>
             )}
@@ -470,10 +551,21 @@ export default function App() {
                   setPeerSeed(tickers);
                   setSection("peers");
                 }}
+                onOpenCompare={(left, right, leftSectionId) => {
+                  setReturnTo("filings");
+                  openCompare(left, right, leftSectionId);
+                }}
+                onCreateMatrix={(accessions) => {
+                  setMatrixSeed(accessions);
+                  setSection("matrix");
+                }}
               />
             )}
             {section === "matrix" && (
-              <MatrixScreen onOpenDocument={openDocument} />
+              <MatrixScreen
+                seedAccessions={matrixSeed}
+                onOpenDocument={openDocument}
+              />
             )}
             {section === "peers" && (
               <CompareScreen initialTickers={peerSeed} />
@@ -482,26 +574,30 @@ export default function App() {
               <ChangesScreen seed={changeSeed} />
             )}
             {section === "evals" && <EvalsScreen />}
-            <DocumentDrawer
-              accession={docAccession}
-              focusSectionId={docFocusSectionId}
-              onClose={() => {
-                setDocAccession(null);
-                setDocFocusSectionId(null);
-              }}
-              onOpenPeers={(tickers) => {
-                setPeerSeed(tickers);
-                setSection("peers");
-                setDocAccession(null);
-              }}
-              onOpenChanges={(seed) => {
-                setChangeSeed({ ...seed, autoRun: true });
-                setSection("changes");
-                setDocAccession(null);
-              }}
-            />
+            {section === "document" && docAccession ? (
+              <DocumentScreen
+                accession={docAccession}
+                focusSectionId={docFocusSectionId}
+                onBack={() => setSection(returnTo)}
+                onOpenPeers={(tickers) => {
+                  setPeerSeed(tickers);
+                  setSection("peers");
+                }}
+                onOpenChanges={(seed) => {
+                  setChangeSeed({ ...seed, autoRun: true });
+                  setSection("changes");
+                }}
+              />
+            ) : null}
+            {section === "compare" ? (
+              <CompareDocsScreen
+                initialLeft={compareLeft}
+                initialRight={compareRight}
+                initialLeftSectionId={compareLeftSectionId}
+                onBack={() => setSection(returnTo)}
+              />
+            ) : null}
           </Content>
-        </Layout>
       </Layout>
     </XProvider>
   );
@@ -1106,12 +1202,24 @@ function ResearchScreen({
   );
 }
 
+function filingRowKey(row: SearchResultRow): string {
+  return `${row.accessionNumber}-${row.chunkId ?? row.sectionId ?? "index"}`;
+}
+
 function FilingsScreen({
   onOpenDocument,
   onOpenPeers,
+  onOpenCompare,
+  onCreateMatrix,
 }: {
   onOpenDocument: (accession: string, sectionId?: string | null) => void;
   onOpenPeers: (tickers: string[]) => void;
+  onOpenCompare: (
+    left: string,
+    right: string,
+    leftSectionId: string | null,
+  ) => void;
+  onCreateMatrix: (accessions: string[]) => void;
 }) {
   const [companiesList, setCompaniesList] = useState<Company[]>([]);
   const [ticker, setTicker] = useState<string | undefined>(undefined);
@@ -1120,8 +1228,10 @@ function FilingsScreen({
   const [item, setItem] = useState<string | undefined>(undefined);
   const [keywordDraft, setKeywordDraft] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [textOnly, setTextOnly] = useState(true);
   const [mode, setMode] = useState<string>("index");
   const [rows, setRows] = useState<SearchResultRow[]>([]);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -1149,6 +1259,9 @@ function FilingsScreen({
       if (keyword.trim()) {
         params.set("q", keyword.trim());
       }
+      if (textOnly) {
+        params.set("text", "1");
+      }
       const res = await fetch(`/api/search?${params}`);
       if (!res.ok) {
         throw new Error(`Search failed (${res.status})`);
@@ -1164,11 +1277,31 @@ function FilingsScreen({
     } finally {
       setLoading(false);
     }
-  }, [ticker, form, year, item, keyword]);
+  }, [ticker, form, year, item, keyword, textOnly]);
 
   useEffect(() => {
     void runSearch();
   }, [runSearch]);
+
+  useEffect(() => {
+    const live = new Set(rows.map(filingRowKey));
+    setSelectedKeys((prev) => prev.filter((key) => live.has(key)));
+  }, [rows]);
+
+  const selectedDocs = useMemo(() => {
+    const byKey = new Map(rows.map((row) => [filingRowKey(row), row]));
+    const seen = new Set<string>();
+    const picked: SearchResultRow[] = [];
+    for (const key of selectedKeys) {
+      const row = byKey.get(key);
+      if (!row || seen.has(row.accessionNumber) || row.hasText === false) {
+        continue;
+      }
+      seen.add(row.accessionNumber);
+      picked.push(row);
+    }
+    return picked;
+  }, [rows, selectedKeys]);
 
   function submitKeyword(value?: string) {
     setKeyword((value ?? keywordDraft).trim());
@@ -1200,12 +1333,20 @@ function FilingsScreen({
                 style={{ width: "100%", marginTop: 4 }}
                 placeholder="Any form"
                 value={form}
-                onChange={setForm}
+                onChange={(next) => {
+                  setForm(next);
+                  const group = SECTION_GROUPS.find(
+                    (entry) => entry.form === baseFormName(next),
+                  );
+                  if (item && !group?.options.some((option) => option.item === item)) {
+                    setItem(undefined);
+                  }
+                }}
                 options={FORM_OPTIONS}
               />
             </div>
             <div>
-              <Typography.Text type="secondary">Year</Typography.Text>
+              <Typography.Text type="secondary">Filing year</Typography.Text>
               <Select
                 allowClear
                 style={{ width: "100%", marginTop: 4 }}
@@ -1219,13 +1360,54 @@ function FilingsScreen({
               <Typography.Text type="secondary">Section</Typography.Text>
               <Select
                 allowClear
+                showSearch
+                optionFilterProp="label"
                 style={{ width: "100%", marginTop: 4 }}
                 placeholder="Any parsed section"
-                value={item}
-                onChange={setItem}
-                options={SECTION_ITEM_OPTIONS}
+                value={
+                  item && baseFormName(form)
+                    ? `${baseFormName(form)}:${item}`
+                    : undefined
+                }
+                onChange={(value) => {
+                  if (!value) {
+                    setItem(undefined);
+                    return;
+                  }
+                  const [nextForm, nextItem] = value.split(":");
+                  setForm(nextForm);
+                  setItem(nextItem);
+                }}
+                options={SECTION_GROUPS.filter(
+                  (group) => !form || group.form === baseFormName(form),
+                ).map((group) => ({
+                  label: group.form,
+                  options: group.options.map((option) => ({
+                    value: `${group.form}:${option.item}`,
+                    label: option.label,
+                  })),
+                }))}
               />
             </div>
+            <Flex align="center" justify="space-between">
+              <Typography.Text type="secondary">Downloaded text</Typography.Text>
+              <Switch checked={textOnly} onChange={setTextOnly} />
+            </Flex>
+            <Button
+              block
+              disabled={!ticker && !form && !year && !item && !keyword && textOnly}
+              onClick={() => {
+                setTicker(undefined);
+                setForm(undefined);
+                setYear(undefined);
+                setItem(undefined);
+                setKeywordDraft("");
+                setKeyword("");
+                setTextOnly(true);
+              }}
+            >
+              Clear filters
+            </Button>
             <div>
               <Typography.Text type="secondary">Keywords</Typography.Text>
               <Input.Search
@@ -1271,11 +1453,63 @@ function FilingsScreen({
           }
           extra={<Tag>{rows.length} rows</Tag>}
         >
+          <Flex
+            justify="space-between"
+            align="center"
+            wrap
+            gap={8}
+            style={{ marginBottom: 12 }}
+          >
+            <Typography.Text type="secondary">
+              {selectedDocs.length === 0
+                ? "Select filings to compare or build a matrix."
+                : `${selectedDocs.length} filing${selectedDocs.length === 1 ? "" : "s"} selected`}
+            </Typography.Text>
+            <Space wrap>
+              <Button
+                disabled={selectedDocs.length !== 2}
+                onClick={() => {
+                  const [left, right] = selectedDocs;
+                  if (!left || !right) {
+                    return;
+                  }
+                  onOpenCompare(
+                    left.accessionNumber,
+                    right.accessionNumber,
+                    left.sectionId ?? null,
+                  );
+                }}
+              >
+                Compare
+              </Button>
+              <Button
+                type="primary"
+                disabled={selectedDocs.length < 2 || selectedDocs.length > 12}
+                onClick={() =>
+                  onCreateMatrix(selectedDocs.map((row) => row.accessionNumber))
+                }
+              >
+                Create matrix
+              </Button>
+              <Button
+                disabled={selectedKeys.length === 0}
+                onClick={() => setSelectedKeys([])}
+              >
+                Clear
+              </Button>
+            </Space>
+          </Flex>
           <Table
             size="small"
-            rowKey={(r) =>
-              `${r.accessionNumber}-${r.chunkId ?? r.sectionId ?? "index"}`
-            }
+            rowKey={filingRowKey}
+            rowSelection={{
+              selectedRowKeys: selectedKeys,
+              preserveSelectedRowKeys: true,
+              onChange: (keys) => setSelectedKeys(keys.map(String)),
+              getCheckboxProps: (row) => ({
+                disabled: row.hasText === false,
+              }),
+            }}
             loading={loading}
             dataSource={rows}
             locale={{
@@ -1307,10 +1541,18 @@ function FilingsScreen({
                 render: (v: string | null | undefined) => v ?? "—",
               },
               {
-                title: "Item",
-                dataIndex: "item",
-                width: 70,
-                render: (v: string | null | undefined) => v ?? "—",
+                title: "Section",
+                width: 180,
+                ellipsis: true,
+                render: (_, row) =>
+                  row.item ? (
+                    <span>
+                      {row.item}
+                      {row.title ? ` · ${row.title}` : ""}
+                    </span>
+                  ) : (
+                    "—"
+                  ),
               },
               {
                 title: "Snippet / note",
@@ -1390,23 +1632,16 @@ function readableText(html: string): string {
     .trim();
 }
 
-function DocumentDrawer({
+function DocumentPane({
   accession,
   focusSectionId,
-  onClose,
-  onOpenPeers,
-  onOpenChanges,
+  outlineWidth = 280,
+  onActiveSection,
 }: {
-  accession: string | null;
+  accession: string;
   focusSectionId: string | null;
-  onClose: () => void;
-  onOpenPeers: (tickers: string[]) => void;
-  onOpenChanges: (seed: {
-    ticker: string;
-    item: string;
-    older?: string;
-    newer?: string;
-  }) => void;
+  outlineWidth?: number;
+  onActiveSection?: (section: OutlineSection | null) => void;
 }) {
   const [detail, setDetail] = useState<FilingDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1418,15 +1653,6 @@ function DocumentDrawer({
   const [bodyLoading, setBodyLoading] = useState(false);
 
   useEffect(() => {
-    if (!accession) {
-      setDetail(null);
-      setActiveSectionId(null);
-      setExpandedKeys([]);
-      setSectionBody(null);
-      setActiveDocId(null);
-      setDocBody(null);
-      return;
-    }
     setLoading(true);
     void fetch(`/api/filings/${encodeURIComponent(accession)}`)
       .then(async (res) => {
@@ -1442,6 +1668,7 @@ function DocumentDrawer({
             ? focusSectionId
             : (json.sections[0]?.id ?? null);
         setActiveSectionId(focused);
+        onActiveSection?.(focused ? findOutline(json.sections, focused) : null);
         setExpandedKeys([
           ...json.sections.map((section) => section.id),
           ...(focused ? (ancestorKeys(json.sections, focused) ?? []) : []),
@@ -1455,11 +1682,13 @@ function DocumentDrawer({
         );
       })
       .finally(() => setLoading(false));
-  }, [accession, focusSectionId]);
+  }, [accession, focusSectionId, onActiveSection]);
 
   useEffect(() => {
-    if (!activeSectionId) {
-      setSectionBody(null);
+    if (!activeSectionId || activeDocId) {
+      if (!activeSectionId) {
+        setSectionBody(null);
+      }
       return;
     }
     setBodyLoading(true);
@@ -1473,7 +1702,7 @@ function DocumentDrawer({
       .then((json) => setSectionBody(json.section.body))
       .catch(() => setSectionBody(null))
       .finally(() => setBodyLoading(false));
-  }, [activeSectionId]);
+  }, [activeSectionId, activeDocId]);
 
   async function loadDocument(id: string) {
     setActiveDocId(id);
@@ -1495,36 +1724,186 @@ function DocumentDrawer({
     }
   }
 
-  const activeSection = detail
-    ? findOutline(detail.sections, activeSectionId ?? "")
-    : null;
   const exhibits =
     detail?.documents.filter((d) => d.kind === "exhibit") ?? [];
 
+  if (loading || !detail) {
+    return <Spin />;
+  }
+
   return (
-    <Drawer
-      width="92%"
-      open={Boolean(accession)}
-      onClose={onClose}
-      title={
-        detail
-          ? `${detail.filing.ticker} · ${detail.filing.form} · ${detail.filing.filingDate}`
-          : "Filing"
-      }
-      extra={
-        detail ? (
-          <Space>
+    <div style={{ display: "flex", gap: 16, minHeight: "70vh" }}>
+      <div
+        style={{
+          width: outlineWidth,
+          flex: `0 0 ${outlineWidth}px`,
+          overflow: "auto",
+          maxHeight: "75vh",
+        }}
+      >
+        {detail.sections.length === 0 ? (
+          <Typography.Text type="secondary">
+            No parsed sections for this filing. Index-only rows and some forms
+            have no stored narrative.
+          </Typography.Text>
+        ) : (
+          <Tree
+            blockNode
+            selectedKeys={
+              activeDocId || !activeSectionId ? [] : [activeSectionId]
+            }
+            expandedKeys={expandedKeys}
+            onExpand={(keys) => setExpandedKeys(keys.map(String))}
+            treeData={outlineTree(detail.sections)}
+            onSelect={(keys) => {
+              const id = String(keys[0] ?? "");
+              if (!id) {
+                return;
+              }
+                    setActiveDocId(null);
+                    setDocBody(null);
+                    setActiveSectionId(id);
+                    onActiveSection?.(findOutline(detail.sections, id));
+            }}
+          />
+        )}
+        {exhibits.length > 0 ? (
+          <div style={{ marginTop: 16 }}>
+            <Typography.Text type="secondary">Exhibits</Typography.Text>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                marginTop: 8,
+              }}
+            >
+              {exhibits.map((doc) => (
+                <Button
+                  key={doc.id}
+                  type={activeDocId === doc.id ? "primary" : "default"}
+                  onClick={() => void loadDocument(doc.id)}
+                >
+                  {doc.documentType} · {doc.filename}
+                </Button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <div style={{ flex: 1, overflow: "auto", maxHeight: "75vh" }}>
+        {bodyLoading ? (
+          <Spin />
+        ) : (
+          <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>
+            {activeDocId
+              ? readableText(docBody ?? "").slice(0, 200_000) || "No body"
+              : (sectionBody ?? "No body")}
+          </Typography.Paragraph>
+        )}
+      </div>
+    </div>
+  );
+}
+
+async function priorFilingAccession(
+  ticker: string,
+  accession: string,
+  filingDate: string,
+): Promise<string | undefined> {
+  const res = await fetch(`/api/companies/${ticker}/filings`);
+  if (!res.ok) {
+    return undefined;
+  }
+  const json = (await res.json()) as { filings: FilingRow[] };
+  const prior = json.filings.filter(
+    (f) => f.accessionNumber !== accession && f.filingDate <= filingDate,
+  );
+  return (
+    prior.find((f) => f.form.startsWith("10-K")) ??
+    prior.find((f) => f.form.startsWith("10-Q")) ??
+    prior[0]
+  )?.accessionNumber;
+}
+
+function DocumentScreen({
+  accession,
+  focusSectionId,
+  onBack,
+  onOpenPeers,
+  onOpenChanges,
+}: {
+  accession: string;
+  focusSectionId: string | null;
+  onBack: () => void;
+  onOpenPeers: (tickers: string[]) => void;
+  onOpenChanges: (seed: {
+    ticker: string;
+    item: string;
+    older?: string;
+    newer?: string;
+  }) => void;
+}) {
+  const [detail, setDetail] = useState<FilingDetail | null>(null);
+  const [activeSection, setActiveSection] = useState<OutlineSection | null>(
+    null,
+  );
+  const rememberSection = useCallback((section: OutlineSection | null) => {
+    setActiveSection(section);
+  }, []);
+
+  useEffect(() => {
+    setDetail(null);
+    setActiveSection(null);
+    void fetch(`/api/filings/${encodeURIComponent(accession)}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`Filing load failed (${res.status})`);
+        }
+        return (await res.json()) as FilingDetail;
+      })
+      .then(setDetail)
+      .catch((cause: unknown) => {
+        message.error(
+          cause instanceof Error ? cause.message : "Filing load failed",
+        );
+      });
+  }, [accession]);
+
+  return (
+    <Space direction="vertical" style={{ width: "100%" }} size="middle">
+      <Flex justify="space-between" align="flex-start" wrap gap={12}>
+        <div>
+          <Button type="link" style={{ paddingLeft: 0 }} onClick={onBack}>
+            Back
+          </Button>
+          <Typography.Title level={3} style={{ margin: 0 }}>
+            {detail
+              ? `${detail.filing.ticker} · ${detail.filing.form} · ${detail.filing.filingDate}`
+              : "Filing"}
+          </Typography.Title>
+          {detail ? (
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              {detail.filing.name} · CIK {detail.filing.cik}
+              {detail.filing.sicDescription
+                ? ` · ${detail.filing.sicDescription}`
+                : ""}
+              {" · "}
+              <a href={detail.filing.filingUrl} target="_blank" rel="noreferrer">
+                Open on EDGAR
+              </a>
+            </Typography.Paragraph>
+          ) : null}
+        </div>
+        {detail ? (
+          <Space wrap>
             <Button
               onClick={() =>
-                onOpenPeers([
-                  detail.filing.ticker,
-                  "AAPL",
-                  "AMD",
-                  "MSFT",
-                  "NVDA",
-                ]
-                  .filter((t, i, arr) => arr.indexOf(t) === i)
-                  .slice(0, 4))
+                onOpenPeers(
+                  [detail.filing.ticker, "AAPL", "AMD", "MSFT", "NVDA"]
+                    .filter((t, i, arr) => arr.indexOf(t) === i)
+                    .slice(0, 4),
+                )
               }
             >
               Peer metrics
@@ -1533,146 +1912,196 @@ function DocumentDrawer({
               type="primary"
               disabled={!activeSection}
               onClick={() => {
-                if (!detail || !activeSection) {
+                if (!activeSection) {
                   return;
                 }
-                void (async () => {
-                  let older: string | undefined;
-                  try {
-                    const res = await fetch(
-                      `/api/companies/${detail.filing.ticker}/filings`,
-                    );
-                    if (res.ok) {
-                      const json = (await res.json()) as {
-                        filings: FilingRow[];
-                      };
-                      const prior = json.filings.filter(
-                        (f) =>
-                          f.accessionNumber !==
-                            detail.filing.accessionNumber &&
-                          f.filingDate <= detail.filing.filingDate,
-                      );
-                      const prefer =
-                        prior.find((f) => f.form.startsWith("10-K")) ??
-                        prior.find((f) => f.form.startsWith("10-Q")) ??
-                        prior[0];
-                      older = prefer?.accessionNumber;
-                    }
-                  } catch {
-                    // optional older
-                  }
+                void priorFilingAccession(
+                  detail.filing.ticker,
+                  detail.filing.accessionNumber,
+                  detail.filing.filingDate,
+                ).then((older) =>
                   onOpenChanges({
                     ticker: detail.filing.ticker,
                     item: activeSection.item,
                     newer: detail.filing.accessionNumber,
                     older,
-                  });
-                })();
+                  }),
+                );
               }}
             >
               Diff this section
             </Button>
           </Space>
-        ) : null
+        ) : null}
+      </Flex>
+      <Card>
+        <DocumentPane
+          accession={accession}
+          focusSectionId={focusSectionId}
+          onActiveSection={rememberSection}
+        />
+      </Card>
+    </Space>
+  );
+}
+
+function CompareColumn({
+  label,
+  initialAccession,
+  focusSectionId,
+}: {
+  label: string;
+  initialAccession: string | null;
+  focusSectionId: string | null;
+}) {
+  const [companiesList, setCompaniesList] = useState<Company[]>([]);
+  const [ticker, setTicker] = useState<string | undefined>(undefined);
+  const [filings, setFilings] = useState<SectionFilingRow[]>([]);
+  const [accession, setAccession] = useState<string | null>(initialAccession);
+
+  useEffect(() => {
+    void fetch("/api/companies")
+      .then((r) => r.json())
+      .then((json: { companies: Company[] }) => setCompaniesList(json.companies));
+  }, []);
+
+  useEffect(() => {
+    setAccession(initialAccession);
+    if (!initialAccession) {
+      return;
+    }
+    void fetch(`/api/filings/${encodeURIComponent(initialAccession)}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          return null;
+        }
+        return (await res.json()) as FilingDetail;
+      })
+      .then((json) => {
+        if (json) {
+          setTicker(json.filing.ticker);
+        }
+      });
+  }, [initialAccession]);
+
+  useEffect(() => {
+    if (!ticker) {
+      setFilings([]);
+      return;
+    }
+    void fetch(`/api/companies/${ticker}/section-filings`)
+      .then(async (res) => {
+        if (!res.ok) {
+          return { filings: [] as SectionFilingRow[] };
+        }
+        return (await res.json()) as { filings: SectionFilingRow[] };
+      })
+      .then((json) => setFilings(json.filings));
+  }, [ticker]);
+
+  return (
+    <Card
+      title={label}
+      extra={
+        accession ? <Tag>{accession}</Tag> : <Tag>Pick a filing</Tag>
       }
     >
-      {loading || !detail ? (
-        <Spin />
-      ) : (
-        <Space direction="vertical" style={{ width: "100%" }} size="middle">
-          <div>
-            <Typography.Text strong>{detail.filing.name}</Typography.Text>
-            <br />
-            <Typography.Text type="secondary">
-              CIK {detail.filing.cik}
-              {detail.filing.sicDescription
-                ? ` · ${detail.filing.sicDescription}`
-                : ""}
-            </Typography.Text>
-            <br />
-            <a href={detail.filing.filingUrl} target="_blank" rel="noreferrer">
-              Open on EDGAR
-            </a>
-          </div>
-          <div style={{ display: "flex", gap: 16, minHeight: "70vh" }}>
-            <div
-              style={{
-                width: 320,
-                flex: "0 0 320px",
-                overflow: "auto",
-                maxHeight: "75vh",
-              }}
-            >
-              {detail.sections.length === 0 ? (
-                <Typography.Text type="secondary">
-                  No parsed sections for this filing. Index-only rows and some
-                  forms have no stored narrative.
-                </Typography.Text>
-              ) : (
-                <Tree
-                  blockNode
-                  selectedKeys={
-                    activeDocId || !activeSectionId ? [] : [activeSectionId]
-                  }
-                  expandedKeys={expandedKeys}
-                  onExpand={(keys) => setExpandedKeys(keys.map(String))}
-                  treeData={outlineTree(detail.sections)}
-                  onSelect={(keys) => {
-                    const id = String(keys[0] ?? "");
-                    if (!id) {
-                      return;
-                    }
-                    setActiveDocId(null);
-                    setDocBody(null);
-                    setActiveSectionId(id);
-                  }}
-                />
-              )}
-              {exhibits.length > 0 ? (
-                <div style={{ marginTop: 16 }}>
-                  <Typography.Text type="secondary">Exhibits</Typography.Text>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 8,
-                      marginTop: 8,
-                    }}
-                  >
-                    {exhibits.map((doc) => (
-                      <Button
-                        key={doc.id}
-                        type={activeDocId === doc.id ? "primary" : "default"}
-                        onClick={() => void loadDocument(doc.id)}
-                      >
-                        {doc.documentType} · {doc.filename}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-            <div style={{ flex: 1, overflow: "auto", maxHeight: "75vh" }}>
-              {bodyLoading ? (
-                <Spin />
-              ) : (
-                <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>
-                  {activeDocId
-                    ? readableText(docBody ?? "").slice(0, 200_000) || "No body"
-                    : (sectionBody ?? "No body")}
-                </Typography.Paragraph>
-              )}
-            </div>
-          </div>
-        </Space>
-      )}
-    </Drawer>
+      <Space direction="vertical" style={{ width: "100%" }} size="middle">
+        <Select
+          showSearch
+          optionFilterProp="label"
+          style={{ width: "100%" }}
+          placeholder="Company"
+          value={ticker}
+          onChange={(next) => {
+            setTicker(next);
+            setAccession(null);
+          }}
+          options={companiesList.map((c) => ({
+            value: c.ticker,
+            label: `${c.ticker} · ${c.name}`,
+          }))}
+        />
+        <Select
+          showSearch
+          optionFilterProp="label"
+          style={{ width: "100%" }}
+          placeholder="Filing with stored text"
+          value={accession ?? undefined}
+          onChange={setAccession}
+          options={filings.map((f) => ({
+            value: f.accessionNumber,
+            label: `${f.filingDate} · ${f.form}`,
+          }))}
+        />
+        {accession ? (
+          <DocumentPane
+            accession={accession}
+            focusSectionId={
+              accession === initialAccession ? focusSectionId : null
+            }
+            outlineWidth={200}
+          />
+        ) : (
+          <Typography.Text type="secondary">
+            Choose a company and a filing to show its sections here.
+          </Typography.Text>
+        )}
+      </Space>
+    </Card>
+  );
+}
+
+function CompareDocsScreen({
+  initialLeft,
+  initialRight,
+  initialLeftSectionId,
+  onBack,
+}: {
+  initialLeft: string | null;
+  initialRight: string | null;
+  initialLeftSectionId: string | null;
+  onBack: () => void;
+}) {
+  return (
+    <Space direction="vertical" style={{ width: "100%" }} size="middle">
+      <div>
+        <Button type="link" style={{ paddingLeft: 0 }} onClick={onBack}>
+          Back
+        </Button>
+        <Typography.Title level={3} style={{ margin: 0 }}>
+          Compare filings
+        </Typography.Title>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          Read two stored filings next to each other. Each column keeps its own
+          outline and section text.
+        </Typography.Paragraph>
+      </div>
+      <Row gutter={16}>
+        <Col xs={24} xl={12}>
+          <CompareColumn
+            label="Left filing"
+            initialAccession={initialLeft}
+            focusSectionId={initialLeftSectionId}
+          />
+        </Col>
+        <Col xs={24} xl={12}>
+          <CompareColumn
+            label="Right filing"
+            initialAccession={initialRight}
+            focusSectionId={null}
+          />
+        </Col>
+      </Row>
+    </Space>
   );
 }
 
 function MatrixScreen({
+  seedAccessions,
   onOpenDocument,
 }: {
+  seedAccessions: string[];
   onOpenDocument: (accession: string, sectionId?: string | null) => void;
 }) {
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -1688,12 +2117,49 @@ function MatrixScreen({
   const [selectedAccessions, setSelectedAccessions] = useState<string[]>([]);
   const [grid, setGrid] = useState<MatrixGrid | null>(null);
   const [loading, setLoading] = useState(false);
+  const seedKey = seedAccessions.join(",");
 
   useEffect(() => {
     void fetch("/api/companies")
       .then((r) => r.json())
       .then((json: { companies: Company[] }) => setWatchlist(json.companies));
   }, []);
+
+  useEffect(() => {
+    if (seedAccessions.length < 2) {
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    const params = new URLSearchParams({ accessions: seedKey });
+    void fetch(`/api/matrix/by-accessions?${params}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`Matrix failed (${res.status})`);
+        }
+        return (await res.json()) as MatrixGrid;
+      })
+      .then((json) => {
+        if (!cancelled) {
+          setGrid(json);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          message.error(
+            cause instanceof Error ? cause.message : "Matrix failed",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [seedKey, seedAccessions.length]);
 
   const peersByTicker = useMemo(() => {
     const map = new Map<string, Company[]>();
