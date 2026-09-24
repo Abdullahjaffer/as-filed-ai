@@ -7,6 +7,9 @@
     "dev:web": "pnpm --filter @filing-desk/web dev",
     "dev:api": "pnpm --filter @filing-desk/api dev",
     "build": "pnpm -r --if-present build",
-    "db:push": "pnpm --filter @filing-desk/db push"
+    "db:push": "pnpm --filter @filing-desk/db push",
+    "ingest": "pnpm --filter @filing-desk/ingest ingest",
+    "embed": "pnpm --filter @filing-desk/ingest embed",
+    "eval": "pnpm --filter @filing-desk/ingest eval"
   }
 }

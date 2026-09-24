@@ -1,27 +1,21 @@
 {
-  "name": "@filing-desk/api",
+  "name": "@filing-desk/ingest",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js"
+    "ingest": "tsx src/cli.ts",
+    "eval": "tsx src/eval.ts",
+    "embed": "tsx src/embed-backfill.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^2.0.32",
     "@filing-desk/db": "workspace:*",
-    "ai": "^5.0.44",
-    "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "drizzle-orm": "^0.44.6",
-    "express": "^5.1.0",
     "openai": "^5.20.1",
     "zod": "^4.1.5"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.3",
     "@types/node": "^24.13.3",
     "tsx": "^4.20.5",
     "typescript": "~6.0.2"

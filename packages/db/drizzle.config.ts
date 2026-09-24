@@ -7,6 +7,6 @@ export default defineConfig({
   dbCredentials: {
     url:
       process.env.DATABASE_URL ??
-      "postgres://filing:filing@localhost:5432/filing_desk",
+      "postgres://filing:filing@localhost:55432/filing_desk",
   },
 });

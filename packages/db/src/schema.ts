@@ -6,6 +6,7 @@
  * values. Messages and traces record agent runs. Eval cases are the frozen
  * questions used to score those runs.
  */
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -104,6 +105,10 @@ export const chunks = pgTable(
   },
   (table) => [
     index("chunks_embedding_idx").using("hnsw", table.embedding.op("vector_cosine_ops")),
+    index("chunks_content_fts_idx").using(
+      "gin",
+      sql`to_tsvector('english', ${table.content})`,
+    ),
   ],
 );
 

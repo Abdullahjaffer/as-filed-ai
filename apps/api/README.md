@@ -1,21 +1,25 @@
 # @filing-desk/api
 
-Express 5 API in TypeScript. `tsx` runs it in development. `tsc` compiles it to `dist` for `pnpm start`.
+Express 5 API in TypeScript. Loads `.env` from the repo root. Talks to Postgres via `@filing-desk/db`. The chat agent uses the Vercel AI SDK (`ai` + `@ai-sdk/openai`).
 
 ## Routes
 
-| Method | Path | Response |
+| Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/health` | `{ "ok": true, "service": "filing-desk-api" }` |
+| `GET` | `/api/health` | `{ ok, service }` |
+| `GET` | `/api/companies?q=` | Search tickers / names |
+| `GET` | `/api/companies/:ticker` | Company dossier summary |
+| `GET` | `/api/companies/:ticker/facts/strip` | Revenue, operating income, net income, diluted EPS series |
+| `GET` | `/api/companies/:ticker/filings` | Filing list (`?form=10-K` optional) |
+| `POST` | `/api/diff` | Section diff (`ticker`, `item`, `olderAccession`, `newerAccession`) |
+| `POST` | `/api/chat` | Streaming tool-using agent (UI message stream) |
+| `GET` | `/api/conversations/:id/traces` | Tool steps for a conversation |
+| `GET` | `/api/evals` | Latest eval cases and runs |
 
-CORS is enabled so a browser on another origin can call the API. The Vite app does not need that for local development, because `/api` is proxied.
-
-The listen port is `PORT`, or `4000` when `PORT` is unset.
+Chat requires `OPENAI_API_KEY`. Tools: `resolveCompany`, `getFacts`, `searchFilings`, `readSection`, `compareFacts`, `diffSections`.
 
 ```bash
 pnpm --filter @filing-desk/api dev
-pnpm --filter @filing-desk/api build
-pnpm --filter @filing-desk/api start
 ```
 
-See the [root README](../../README.md) for the workspace setup.
+See [AGENTS.md](../../AGENTS.md) and [docs/architecture.md](../../docs/architecture.md).

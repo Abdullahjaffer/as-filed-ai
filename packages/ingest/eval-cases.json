@@ -1,0 +1,152 @@
+[
+  {
+    "ticker": "NVDA",
+    "question": "What was NVIDIA's most recently reported annual NetIncomeLoss in us-gaap?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "NVDA",
+    "question": "What was NVIDIA's most recently reported annual Revenues or RevenueFromContractWithCustomerExcludingAssessedTax?",
+    "expected": { "type": "fact", "concepts": ["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"], "formContains": "10-K" }
+  },
+  {
+    "ticker": "AAPL",
+    "question": "What was Apple's most recently reported annual NetIncomeLoss?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "AAPL",
+    "question": "What was Apple's diluted EPS (EarningsPerShareDiluted) in the latest annual filing?",
+    "expected": { "type": "fact", "concept": "EarningsPerShareDiluted", "formContains": "10-K" }
+  },
+  {
+    "ticker": "MSFT",
+    "question": "What was Microsoft's most recent annual OperatingIncomeLoss?",
+    "expected": { "type": "fact", "concept": "OperatingIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "MSFT",
+    "question": "What was Microsoft's most recent annual NetIncomeLoss?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "GOOGL",
+    "question": "What was Alphabet's most recent annual NetIncomeLoss?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "AMZN",
+    "question": "What was Amazon's most recent annual NetIncomeLoss?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "META",
+    "question": "What was Meta's most recent annual NetIncomeLoss?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "NVDA",
+    "question": "Summarize a risk factor theme from NVIDIA's latest 10-K Item 1A and quote the filing.",
+    "expected": { "type": "quote", "item": "1A", "minQuoteLength": 40 }
+  },
+  {
+    "ticker": "AAPL",
+    "question": "Quote a sentence from Apple's Risk Factors (Item 1A) about competition or supply.",
+    "expected": { "type": "quote", "item": "1A", "minQuoteLength": 40 }
+  },
+  {
+    "ticker": "MSFT",
+    "question": "Quote from Microsoft MD&A (Item 7) about revenue or cloud.",
+    "expected": { "type": "quote", "item": "7", "minQuoteLength": 40 }
+  },
+  {
+    "ticker": "AMD",
+    "question": "What was AMD's most recent annual NetIncomeLoss?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "AVGO",
+    "question": "What was Broadcom's most recent annual NetIncomeLoss?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "JPM",
+    "question": "What was JPMorgan's most recent annual NetIncomeLoss?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "NVDA",
+    "question": "Compare NVIDIA revenue trend using XBRL facts for the last few years.",
+    "expected": { "type": "fact", "concepts": ["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"] }
+  },
+  {
+    "ticker": "AAPL",
+    "question": "What forms has Apple filed recently according to the local database?",
+    "expected": { "type": "presence", "minFilings": 1 }
+  },
+  {
+    "ticker": "TSLA",
+    "question": "What was Tesla's most recent annual NetIncomeLoss?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "COST",
+    "question": "What was Costco's most recent annual NetIncomeLoss?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "WMT",
+    "question": "What was Walmart's most recent annual NetIncomeLoss?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "NVDA",
+    "question": "Quote from NVIDIA Business section (Item 1) describing products or GPUs.",
+    "expected": { "type": "quote", "item": "1", "minQuoteLength": 40 }
+  },
+  {
+    "ticker": "MSFT",
+    "question": "Quote a risk factor from Microsoft Item 1A.",
+    "expected": { "type": "quote", "item": "1A", "minQuoteLength": 40 }
+  },
+  {
+    "ticker": "GOOGL",
+    "question": "What was Alphabet diluted EPS (EarningsPerShareDiluted) most recently reported annually?",
+    "expected": { "type": "fact", "concept": "EarningsPerShareDiluted", "formContains": "10-K" }
+  },
+  {
+    "ticker": "META",
+    "question": "What was Meta OperatingIncomeLoss in the latest annual period available?",
+    "expected": { "type": "fact", "concept": "OperatingIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "AMZN",
+    "question": "Quote from Amazon Risk Factors Item 1A.",
+    "expected": { "type": "quote", "item": "1A", "minQuoteLength": 40 }
+  },
+  {
+    "ticker": "NVDA",
+    "question": "List a recent 8-K for NVIDIA if present in the local corpus.",
+    "expected": { "type": "presence", "form": "8-K", "minFilings": 0 }
+  },
+  {
+    "ticker": "AAPL",
+    "question": "What was Apple OperatingIncomeLoss most recent annual value?",
+    "expected": { "type": "fact", "concept": "OperatingIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "AMD",
+    "question": "Quote from AMD Item 1A Risk Factors.",
+    "expected": { "type": "quote", "item": "1A", "minQuoteLength": 40 }
+  },
+  {
+    "ticker": "JNJ",
+    "question": "What was Johnson & Johnson NetIncomeLoss most recent annual?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  },
+  {
+    "ticker": "XOM",
+    "question": "What was Exxon NetIncomeLoss most recent annual?",
+    "expected": { "type": "fact", "concept": "NetIncomeLoss", "formContains": "10-K" }
+  }
+]
