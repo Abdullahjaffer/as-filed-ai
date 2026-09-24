@@ -12,11 +12,13 @@ import {
   getDocumentById,
   getFactStrip,
   getFilingDetail,
+  getMatrixByAccessions,
   getResearchBrief,
   getSectionById,
   getSectionMatrix,
   listEvals,
   listFilings,
+  listSectionFilings,
   listTraces,
   searchCompanies,
   searchFilingsCatalog,
@@ -37,11 +39,13 @@ app.get("/api/companies/:ticker", getCompany);
 app.get("/api/companies/:ticker/brief", getResearchBrief);
 app.get("/api/companies/:ticker/facts/strip", getFactStrip);
 app.get("/api/companies/:ticker/filings", listFilings);
+app.get("/api/companies/:ticker/section-filings", listSectionFilings);
 app.get("/api/search", searchFilingsCatalog);
 app.get("/api/filings/:accession", getFilingDetail);
 app.get("/api/sections/:id", getSectionById);
 app.get("/api/documents/:id", getDocumentById);
 app.get("/api/matrix", getSectionMatrix);
+app.get("/api/matrix/by-accessions", getMatrixByAccessions);
 app.get("/api/evals", listEvals);
 app.get("/api/conversations/:conversationId/traces", listTraces);
 app.post("/api/diff", async (req, res) => {

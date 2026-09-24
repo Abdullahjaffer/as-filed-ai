@@ -98,7 +98,9 @@ System prompt: use tools for every figure and quote; cite form, date, accession 
 | GET | `/api/filings/:accession` | Filing meta, section list, document list (no bodies) |
 | GET | `/api/sections/:id` | Stored section body |
 | GET | `/api/documents/:id` | Stored document/exhibit text |
-| GET | `/api/matrix` | Latest section snippet per ticker for an item |
+| GET | `/api/matrix` | Latest section snippet per ticker for an item (optional `year`) |
+| GET | `/api/matrix/by-accessions` | Same-company matrix: section snippets for listed accessions |
+| GET | `/api/companies/:ticker/section-filings` | Filings with stored sections (matrix builder) |
 | GET | `/api/evals` | Latest eval run summary |
 
 ## UI

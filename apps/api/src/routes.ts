@@ -522,12 +522,14 @@ export async function getDocumentById(
   res.json({ document: row });
 }
 
-/** Latest stored section of an item per ticker, for side-by-side snippets. */
+/** Latest stored section of an item per ticker (optionally for a filing year). */
 export async function getSectionMatrix(
   req: Request,
   res: Response,
 ): Promise<void> {
   const item = String(req.query.item ?? "1A").trim();
+  const yearRaw = req.query.year ? String(req.query.year).trim() : undefined;
+  const year = yearRaw ? Number(yearRaw) : undefined;
   const tickersRaw = req.query.tickers
     ? String(req.query.tickers)
     : "NVDA,AAPL,AMD,MSFT";
@@ -539,6 +541,10 @@ export async function getSectionMatrix(
 
   if (tickers.length === 0) {
     res.status(400).json({ error: "tickers required" });
+    return;
+  }
+  if (yearRaw && !Number.isFinite(year)) {
+    res.status(400).json({ error: "year must be a number" });
     return;
   }
 
@@ -593,7 +599,15 @@ export async function getSectionMatrix(
       })
       .from(sections)
       .innerJoin(filings, eq(sections.filingId, filings.id))
-      .where(and(eq(sections.companyId, company.id), eq(sections.item, item)))
+      .where(
+        and(
+          eq(sections.companyId, company.id),
+          eq(sections.item, item),
+          year
+            ? sql`extract(year from ${filings.filingDate}::date) = ${year}`
+            : undefined,
+        ),
+      )
       .orderBy(desc(filings.filingDate))
       .limit(1);
 
@@ -625,7 +639,202 @@ export async function getSectionMatrix(
     });
   }
 
-  res.json({ item, tickers, cells });
+  res.json({ item, year: year ?? null, tickers, cells });
+}
+
+/**
+ * Same-company matrix grid: columns = filings, rows = all section items
+ * present on any of those filings.
+ */
+export async function getMatrixByAccessions(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const accessionsRaw = req.query.accessions
+    ? String(req.query.accessions)
+    : "";
+  const accessions = accessionsRaw
+    .split(",")
+    .map((a) => a.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+
+  if (accessions.length === 0) {
+    res.status(400).json({ error: "accessions required" });
+    return;
+  }
+
+  const columns: Array<{
+    accessionNumber: string;
+    form: string;
+    filingDate: string;
+    filingUrl: string;
+    label: string;
+    ticker: string;
+    name: string;
+    filingId: string;
+  }> = [];
+
+  for (const accession of accessions) {
+    const [filing] = await db
+      .select({
+        filingId: filings.id,
+        accessionNumber: filings.accessionNumber,
+        form: filings.form,
+        filingDate: filings.filingDate,
+        filingUrl: filings.filingUrl,
+        ticker: companies.ticker,
+        name: companies.name,
+      })
+      .from(filings)
+      .innerJoin(companies, eq(filings.companyId, companies.id))
+      .where(eq(filings.accessionNumber, accession))
+      .limit(1);
+
+    if (!filing) {
+      continue;
+    }
+    const year = (filing.filingDate ?? "").slice(0, 4);
+    columns.push({
+      ...filing,
+      label: `${filing.ticker} ${year} ${filing.form}`,
+    });
+  }
+
+  if (columns.length === 0) {
+    res.status(404).json({ error: "No filings found for accessions" });
+    return;
+  }
+
+  const filingIds = columns.map((c) => c.filingId);
+  const sectionRows = await db
+    .select({
+      id: sections.id,
+      item: sections.item,
+      title: sections.title,
+      body: sections.body,
+      filingId: sections.filingId,
+      accessionNumber: filings.accessionNumber,
+    })
+    .from(sections)
+    .innerJoin(filings, eq(sections.filingId, filings.id))
+    .where(inArray(sections.filingId, filingIds));
+
+  const itemOrder = ["1", "1A", "2", "7", "8K", "PROXY"];
+  const itemMeta = new Map<string, string>();
+  for (const row of sectionRows) {
+    if (!itemMeta.has(row.item)) {
+      itemMeta.set(row.item, row.title);
+    }
+  }
+  const rows = [...itemMeta.entries()]
+    .map(([item, title]) => ({ item, title }))
+    .sort((a, b) => {
+      const ai = itemOrder.indexOf(a.item);
+      const bi = itemOrder.indexOf(b.item);
+      const ao = ai === -1 ? 99 : ai;
+      const bo = bi === -1 ? 99 : bi;
+      return ao - bo || a.item.localeCompare(b.item);
+    });
+
+  const cells: Record<
+    string,
+    {
+      sectionId: string;
+      title: string;
+      snippet: string;
+    }
+  > = {};
+  for (const row of sectionRows) {
+    const key = `${row.item}|${row.accessionNumber}`;
+    cells[key] = {
+      sectionId: row.id,
+      title: row.title,
+      snippet: row.body.slice(0, 280),
+    };
+  }
+
+  const tickers = [...new Set(columns.map((c) => c.ticker))];
+  res.json({
+    mode: "by-accessions",
+    ticker: tickers[0],
+    tickers,
+    name: columns[0].name,
+    columns: columns.map(({ filingId: _id, ...col }) => col),
+    rows,
+    cells,
+  });
+}
+
+/** Filings for a ticker that have at least one stored section (for matrix builder). */
+export async function listSectionFilings(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const ticker = String(req.params.ticker).toUpperCase();
+  const form = req.query.form ? String(req.query.form).trim() : undefined;
+  const year = req.query.year ? String(req.query.year).trim() : undefined;
+  const item = req.query.item ? String(req.query.item).trim() : undefined;
+  const q = req.query.q ? String(req.query.q).trim().toLowerCase() : undefined;
+
+  const [company] = await db
+    .select()
+    .from(companies)
+    .where(eq(companies.ticker, ticker))
+    .limit(1);
+  if (!company) {
+    res.status(404).json({ error: "Company not found" });
+    return;
+  }
+
+  const rows = await db
+    .select({
+      accessionNumber: filings.accessionNumber,
+      form: filings.form,
+      filingDate: filings.filingDate,
+      filingUrl: filings.filingUrl,
+      items: sql<string>`string_agg(distinct ${sections.item}, ',' order by ${sections.item})`,
+    })
+    .from(filings)
+    .innerJoin(sections, eq(sections.filingId, filings.id))
+    .where(
+      and(
+        eq(filings.companyId, company.id),
+        form ? eq(filings.form, form) : undefined,
+        year
+          ? sql`extract(year from ${filings.filingDate}::date) = ${Number(year)}`
+          : undefined,
+        item ? eq(sections.item, item) : undefined,
+      ),
+    )
+    .groupBy(
+      filings.id,
+      filings.accessionNumber,
+      filings.form,
+      filings.filingDate,
+      filings.filingUrl,
+    )
+    .orderBy(desc(filings.filingDate))
+    .limit(80);
+
+  const filtered = q
+    ? rows.filter(
+        (r) =>
+          r.accessionNumber.toLowerCase().includes(q) ||
+          r.form.toLowerCase().includes(q) ||
+          (r.filingDate ?? "").includes(q) ||
+          (r.items ?? "").toLowerCase().includes(q),
+      )
+    : rows;
+
+  res.json({
+    ticker,
+    filings: filtered.map((r) => ({
+      ...r,
+      items: (r.items ?? "").split(",").filter(Boolean),
+      year: (r.filingDate ?? "").slice(0, 4),
+    })),
+  });
 }
 
 export async function listEvals(_req: Request, res: Response): Promise<void> {

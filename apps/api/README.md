@@ -14,7 +14,9 @@ Express 5 API in TypeScript. Loads `.env` from the repo root. Talks to Postgres 
 | `GET` | `/api/filings/:accession` | Filing meta + section/document lists (no bodies) |
 | `GET` | `/api/sections/:id` | Stored section body |
 | `GET` | `/api/documents/:id` | Stored document/exhibit text |
-| `GET` | `/api/matrix` | Latest section snippet per ticker (`item`, `tickers`) |
+| `GET` | `/api/matrix` | Latest section snippet per ticker (`item`, `tickers`, optional `year`) |
+| `GET` | `/api/matrix/by-accessions` | Same-company grid: all sections × filings (`accessions`) |
+| `GET` | `/api/companies/:ticker/section-filings` | Filings that have stored sections (`form`, `year`, `item`, `q`) |
 | `POST` | `/api/diff` | Section diff (`ticker`, `item`, `olderAccession`, `newerAccession`) |
 | `POST` | `/api/chat` | Streaming tool-using agent (UI message stream) |
 | `GET` | `/api/conversations/:id/traces` | Tool steps for a conversation |

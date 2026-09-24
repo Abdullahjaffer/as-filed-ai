@@ -10,11 +10,13 @@ import {
   Input,
   Layout,
   Menu,
+  Modal,
   Row,
   Select,
   Space,
   Spin,
   Statistic,
+  Steps,
   Table,
   Tabs,
   Tag,
@@ -29,7 +31,7 @@ import {
   Welcome,
   XProvider,
 } from "@ant-design/x";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 const { Header, Sider, Content } = Layout;
 
@@ -121,16 +123,37 @@ type FilingDetail = {
     filename: string;
   }>;
 };
-type MatrixCell = {
+type MatrixColumn = {
+  accessionNumber: string;
+  form: string;
+  filingDate: string;
+  filingUrl: string;
+  label: string;
   ticker: string;
-  name: string | null;
-  sectionId: string | null;
-  accessionNumber: string | null;
-  form: string | null;
-  filingDate: string | null;
-  filingUrl: string | null;
-  title: string | null;
-  snippet: string | null;
+  name: string;
+};
+type MatrixRowMeta = { item: string; title: string };
+type MatrixGridCell = {
+  sectionId: string;
+  title: string;
+  snippet: string;
+};
+type MatrixGrid = {
+  ticker: string;
+  tickers?: string[];
+  name: string;
+  columns: MatrixColumn[];
+  rows: MatrixRowMeta[];
+  cells: Record<string, MatrixGridCell>;
+};
+type SectionFilingRow = {
+  ticker?: string;
+  accessionNumber: string;
+  form: string;
+  filingDate: string;
+  filingUrl: string;
+  items: string[];
+  year: string;
 };
 type ChatMessage = {
   key: string;
@@ -1642,15 +1665,18 @@ function MatrixScreen({
 }: {
   onOpenDocument: (accession: string, sectionId?: string | null) => void;
 }) {
-  const [item, setItem] = useState("1A");
-  const [tickers, setTickers] = useState<string[]>([
-    "NVDA",
-    "AAPL",
-    "AMD",
-    "MSFT",
-  ]);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [step, setStep] = useState(0);
   const [watchlist, setWatchlist] = useState<Company[]>([]);
-  const [cells, setCells] = useState<MatrixCell[]>([]);
+  const [tickers, setTickers] = useState<string[]>([]);
+  const [focusTicker, setFocusTicker] = useState<string | undefined>(undefined);
+  const [docForm, setDocForm] = useState<string | undefined>(undefined);
+  const [docYear, setDocYear] = useState<string | undefined>(undefined);
+  const [docQuery, setDocQuery] = useState("");
+  const [docRows, setDocRows] = useState<SectionFilingRow[]>([]);
+  const [docLoading, setDocLoading] = useState(false);
+  const [selectedAccessions, setSelectedAccessions] = useState<string[]>([]);
+  const [grid, setGrid] = useState<MatrixGrid | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -1659,31 +1685,217 @@ function MatrixScreen({
       .then((json: { companies: Company[] }) => setWatchlist(json.companies));
   }, []);
 
-  const load = useCallback(async (nextItem: string, nextTickers: string[]) => {
-    if (nextTickers.length === 0) {
-      setCells([]);
+  const peersByTicker = useMemo(() => {
+    const map = new Map<string, Company[]>();
+    for (const c of watchlist) {
+      map.set(
+        c.ticker,
+        watchlist.filter((p) => p.ticker !== c.ticker),
+      );
+    }
+    return map;
+  }, [watchlist]);
+
+  const loadDocuments = useCallback(async () => {
+    if (tickers.length === 0) {
+      setDocRows([]);
+      return;
+    }
+    setDocLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (docForm) {
+        params.set("form", docForm);
+      }
+      if (docYear) {
+        params.set("year", docYear);
+      }
+      if (docQuery.trim()) {
+        params.set("q", docQuery.trim());
+      }
+      const qs = params.toString();
+      const results = await Promise.all(
+        tickers.map(async (t) => {
+          const res = await fetch(
+            `/api/companies/${t}/section-filings${qs ? `?${qs}` : ""}`,
+          );
+          if (!res.ok) {
+            return [] as SectionFilingRow[];
+          }
+          const json = (await res.json()) as { filings: SectionFilingRow[] };
+          return json.filings.map((f) => ({ ...f, ticker: t }));
+        }),
+      );
+      const merged = results.flat().sort((a, b) => {
+        const byDate = (b.filingDate ?? "").localeCompare(a.filingDate ?? "");
+        if (byDate !== 0) {
+          return byDate;
+        }
+        return (a.ticker ?? "").localeCompare(b.ticker ?? "");
+      });
+      setDocRows(merged);
+    } catch (cause) {
+      message.error(
+        cause instanceof Error ? cause.message : "Load filings failed",
+      );
+    } finally {
+      setDocLoading(false);
+    }
+  }, [tickers, docForm, docYear, docQuery]);
+
+  useEffect(() => {
+    if (step === 1 && tickers.length > 0) {
+      void loadDocuments();
+    }
+  }, [step, tickers, loadDocuments]);
+
+  function addTicker(t: string) {
+    setTickers((prev) =>
+      prev.includes(t) ? prev : [...prev, t].slice(0, 8),
+    );
+    setFocusTicker(t);
+  }
+
+  function openWizard(reset = true) {
+    if (reset) {
+      setStep(0);
+      setTickers([]);
+      setFocusTicker(undefined);
+      setSelectedAccessions([]);
+      setDocForm(undefined);
+      setDocYear(undefined);
+      setDocQuery("");
+    } else if (grid) {
+      const fromGrid =
+        grid.tickers ??
+        [...new Set(grid.columns.map((c) => c.ticker))];
+      setTickers(fromGrid);
+      setFocusTicker(fromGrid[0]);
+      setSelectedAccessions(grid.columns.map((c) => c.accessionNumber));
+      setStep(0);
+    }
+    setWizardOpen(true);
+  }
+
+  async function createMatrix() {
+    if (tickers.length === 0 || selectedAccessions.length < 2) {
+      message.warning("Select companies and at least two filings");
       return;
     }
     setLoading(true);
     try {
-      const res = await fetch(
-        `/api/matrix?item=${encodeURIComponent(nextItem)}&tickers=${encodeURIComponent(nextTickers.join(","))}`,
-      );
+      const params = new URLSearchParams({
+        accessions: selectedAccessions.join(","),
+      });
+      const res = await fetch(`/api/matrix/by-accessions?${params}`);
       if (!res.ok) {
         throw new Error(`Matrix failed (${res.status})`);
       }
-      const json = (await res.json()) as { cells: MatrixCell[] };
-      setCells(json.cells);
+      const json = (await res.json()) as MatrixGrid;
+      setGrid(json);
+      setWizardOpen(false);
     } catch (cause) {
       message.error(cause instanceof Error ? cause.message : "Matrix failed");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }
 
-  useEffect(() => {
-    void load(item, tickers);
-  }, [item, tickers, load]);
+  const companyOptions = useMemo(
+    () =>
+      watchlist.map((c) => ({
+        value: c.ticker,
+        label: `${c.ticker} · ${c.name}`,
+      })),
+    [watchlist],
+  );
+
+  const focusPeers =
+    focusTicker && peersByTicker.get(focusTicker)
+      ? peersByTicker.get(focusTicker)!
+      : tickers.length > 0
+        ? (peersByTicker.get(tickers[tickers.length - 1]) ?? [])
+        : [];
+
+  const tableColumns = useMemo(() => {
+    if (!grid) {
+      return [];
+    }
+    const cols: Array<{
+      title: ReactNode;
+      dataIndex?: string;
+      key: string;
+      fixed?: "left";
+      width: number;
+      render?: (value: unknown, record: MatrixRowMeta) => ReactNode;
+    }> = [
+      {
+        title: "Section",
+        key: "section",
+        fixed: "left",
+        width: 160,
+        render: (_: unknown, record: MatrixRowMeta) => (
+          <div>
+            <Typography.Text strong>Item {record.item}</Typography.Text>
+            <br />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {record.title}
+            </Typography.Text>
+          </div>
+        ),
+      },
+    ];
+    for (const col of grid.columns) {
+      cols.push({
+        title: (
+          <div>
+            <div>{col.label}</div>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              {col.filingDate}
+            </Typography.Text>
+          </div>
+        ),
+        key: col.accessionNumber,
+        width: 280,
+        render: (_: unknown, record: MatrixRowMeta) => {
+          const cell = grid.cells[`${record.item}|${col.accessionNumber}`];
+          if (!cell) {
+            return <Typography.Text type="secondary">—</Typography.Text>;
+          }
+          return (
+            <div
+              role="button"
+              tabIndex={0}
+              style={{ cursor: "pointer" }}
+              onClick={() =>
+                onOpenDocument(col.accessionNumber, cell.sectionId)
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  onOpenDocument(col.accessionNumber, cell.sectionId);
+                }
+              }}
+            >
+              <Typography.Paragraph
+                ellipsis={{ rows: 5 }}
+                style={{ marginBottom: 4, fontSize: 12 }}
+              >
+                {cell.snippet}
+              </Typography.Paragraph>
+              <Button type="link" size="small" style={{ padding: 0 }}>
+                Open
+              </Button>
+            </div>
+          );
+        },
+      });
+    }
+    return cols;
+  }, [grid, onOpenDocument]);
+
+  const gridTickers =
+    grid?.tickers ??
+    (grid ? [...new Set(grid.columns.map((c) => c.ticker))] : []);
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -1694,88 +1906,302 @@ function MatrixScreen({
               Section matrix
             </Typography.Title>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              Latest stored section per company. Empty cells mean that item was
-              never parsed for the ticker (common for Item 1 and Item 7).
+              Pick one or more companies (peers listed for quick add), then
+              filings. Rows are all stored sections; columns scroll horizontally.
             </Typography.Paragraph>
           </div>
           <Space wrap>
-            <Select
-              style={{ width: 220 }}
-              value={item}
-              onChange={setItem}
-              options={SECTION_ITEM_OPTIONS}
-            />
-            <Select
-              mode="multiple"
-              style={{ minWidth: 280 }}
-              placeholder="Tickers"
-              value={tickers}
-              onChange={(v) => setTickers(v.slice(0, 8))}
-              options={watchlist.map((c) => ({
-                value: c.ticker,
-                label: c.ticker,
-              }))}
-            />
+            {grid ? (
+              <Button onClick={() => openWizard(false)}>Edit matrix</Button>
+            ) : null}
+            <Button type="primary" onClick={() => openWizard(true)}>
+              Build matrix
+            </Button>
           </Space>
         </Flex>
       </Card>
-      <Spin spinning={loading}>
-        <Row gutter={16}>
-          {cells.map((cell) => (
-            <Col xs={24} md={12} xl={6} key={cell.ticker}>
+
+      {!grid ? (
+        <Card>
+          <Flex vertical align="center" gap={12} style={{ padding: 32 }}>
+            <Typography.Text type="secondary">
+              No matrix yet. Pick companies, then two or more filings.
+            </Typography.Text>
+            <Button type="primary" onClick={() => openWizard(true)}>
+              Build matrix
+            </Button>
+          </Flex>
+        </Card>
+      ) : (
+        <>
+          <Card size="small">
+            <Space wrap>
+              {gridTickers.map((t) => (
+                <Tag key={t} color="blue">
+                  {t}
+                </Tag>
+              ))}
+              <Tag>{grid.rows.length} sections</Tag>
+              <Tag>{grid.columns.length} filings</Tag>
+            </Space>
+          </Card>
+          <Card styles={{ body: { padding: 0 } }}>
+            <Spin spinning={loading}>
+              <Table
+                size="small"
+                rowKey="item"
+                pagination={false}
+                dataSource={grid.rows}
+                columns={tableColumns}
+                scroll={{ x: 160 + grid.columns.length * 280, y: 560 }}
+                bordered
+              />
+            </Spin>
+          </Card>
+        </>
+      )}
+
+      <Modal
+        title="Build section matrix"
+        open={wizardOpen}
+        onCancel={() => setWizardOpen(false)}
+        width={760}
+        destroyOnClose
+        footer={
+          <Flex justify="space-between">
+            <Button
+              disabled={step === 0}
+              onClick={() => setStep((s) => Math.max(0, s - 1))}
+            >
+              Back
+            </Button>
+            <Space>
+              <Button onClick={() => setWizardOpen(false)}>Cancel</Button>
+              {step === 0 ? (
+                <Button
+                  type="primary"
+                  disabled={tickers.length === 0}
+                  onClick={() => setStep(1)}
+                >
+                  Next
+                </Button>
+              ) : (
+                <Button
+                  type="primary"
+                  loading={loading}
+                  disabled={selectedAccessions.length < 2 || tickers.length === 0}
+                  onClick={() => void createMatrix()}
+                >
+                  Create matrix
+                </Button>
+              )}
+            </Space>
+          </Flex>
+        }
+      >
+        <Steps
+          size="small"
+          current={step}
+          style={{ marginBottom: 24 }}
+          items={[{ title: "Companies" }, { title: "Documents" }]}
+        />
+
+        {step === 0 ? (
+          <Space direction="vertical" style={{ width: "100%" }} size="middle">
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              Select one or more companies. Peers for the focused company appear
+              below for one-click add.
+            </Typography.Paragraph>
+            <Select
+              mode="multiple"
+              showSearch
+              allowClear
+              style={{ width: "100%" }}
+              placeholder="Search ticker or name"
+              value={tickers}
+              optionFilterProp="label"
+              options={companyOptions}
+              onChange={(values) => {
+                const next = values.slice(0, 8);
+                setTickers(next);
+                setSelectedAccessions([]);
+                setFocusTicker(
+                  focusTicker && next.includes(focusTicker)
+                    ? focusTicker
+                    : next[next.length - 1],
+                );
+              }}
+              onSelect={(value) => setFocusTicker(value)}
+              filterOption={(input, option) =>
+                String(option?.label ?? "")
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+              }
+            />
+            {tickers.length > 0 ? (
+              <div>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  Selected
+                </Typography.Text>
+                <div style={{ marginTop: 6 }}>
+                  <Space wrap>
+                    {tickers.map((t) => {
+                      const c = watchlist.find((x) => x.ticker === t);
+                      return (
+                        <Tag
+                          key={t}
+                          color={t === focusTicker ? "blue" : undefined}
+                          style={{ cursor: "pointer" }}
+                          onClick={() => setFocusTicker(t)}
+                          closable
+                          onClose={(e) => {
+                            e.preventDefault();
+                            setTickers((prev) => {
+                              const next = prev.filter((x) => x !== t);
+                              if (focusTicker === t) {
+                                setFocusTicker(next[0]);
+                              }
+                              return next;
+                            });
+                          }}
+                        >
+                          {c ? `${t} · ${c.name}` : t}
+                        </Tag>
+                      );
+                    })}
+                  </Space>
+                </div>
+              </div>
+            ) : null}
+            {(focusTicker ?? tickers[0]) ? (
               <Card
                 size="small"
-                title={`${cell.ticker}${cell.name ? ` · ${cell.name}` : ""}`}
-                extra={
-                  cell.accessionNumber ? (
-                    <Button
-                      type="link"
-                      size="small"
-                      onClick={() =>
-                        onOpenDocument(
-                          cell.accessionNumber!,
-                          cell.sectionId,
-                        )
-                      }
-                    >
-                      Open
-                    </Button>
-                  ) : null
-                }
-                onClick={() => {
-                  if (cell.accessionNumber) {
-                    onOpenDocument(cell.accessionNumber, cell.sectionId);
-                  }
-                }}
-                style={{
-                  cursor: cell.accessionNumber ? "pointer" : "default",
-                  minHeight: 220,
-                }}
+                title={`Peers for ${focusTicker ?? tickers[0]}`}
+                styles={{ body: { paddingBlock: 12 } }}
               >
-                {cell.snippet ? (
-                  <>
-                    <Space wrap style={{ marginBottom: 8 }}>
-                      <Tag>{cell.form}</Tag>
-                      <Tag>{cell.filingDate}</Tag>
-                      <Tag>{cell.title}</Tag>
-                    </Space>
-                    <Typography.Paragraph
-                      ellipsis={{ rows: 8, expandable: true }}
-                      style={{ marginBottom: 0 }}
-                    >
-                      {cell.snippet}
-                    </Typography.Paragraph>
-                  </>
-                ) : (
+                {focusPeers.length === 0 ? (
                   <Typography.Text type="secondary">
-                    No stored Item {item} section for {cell.ticker}
+                    No other ingested peers yet.
                   </Typography.Text>
+                ) : (
+                  <Space direction="vertical" style={{ width: "100%" }} size={8}>
+                    {focusPeers.map((p) => {
+                      const selected = tickers.includes(p.ticker);
+                      return (
+                        <Flex
+                          key={p.ticker}
+                          justify="space-between"
+                          align="center"
+                          gap={8}
+                        >
+                          <div>
+                            <Typography.Text strong>{p.ticker}</Typography.Text>
+                            <Typography.Text type="secondary">
+                              {" "}
+                              · {p.name}
+                            </Typography.Text>
+                          </div>
+                          <Button
+                            size="small"
+                            type={selected ? "default" : "primary"}
+                            disabled={selected}
+                            onClick={() => addTicker(p.ticker)}
+                          >
+                            {selected ? "Added" : "Add"}
+                          </Button>
+                        </Flex>
+                      );
+                    })}
+                  </Space>
                 )}
               </Card>
-            </Col>
-          ))}
-        </Row>
-      </Spin>
+            ) : null}
+          </Space>
+        ) : null}
+
+        {step === 1 ? (
+          <Space direction="vertical" style={{ width: "100%" }} size="middle">
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              Select at least two filings across {tickers.join(", ")}. The matrix
+              shows every stored section for those filings.
+            </Typography.Paragraph>
+            <Space wrap>
+              <Select
+                allowClear
+                style={{ width: 140 }}
+                placeholder="Form"
+                value={docForm}
+                onChange={setDocForm}
+                options={FORM_OPTIONS.filter((f) =>
+                  [
+                    "10-K",
+                    "10-K/A",
+                    "10-Q",
+                    "10-Q/A",
+                    "8-K",
+                    "8-K/A",
+                    "DEF 14A",
+                  ].includes(f.value),
+                )}
+              />
+              <Select
+                allowClear
+                style={{ width: 120 }}
+                placeholder="Year"
+                value={docYear}
+                onChange={setDocYear}
+                options={YEAR_OPTIONS}
+              />
+              <Input.Search
+                allowClear
+                style={{ width: 240 }}
+                placeholder="Filter accession / form"
+                value={docQuery}
+                onChange={(e) => setDocQuery(e.target.value)}
+                onSearch={() => void loadDocuments()}
+              />
+            </Space>
+            <Table
+              size="small"
+              rowKey="accessionNumber"
+              loading={docLoading}
+              dataSource={docRows}
+              pagination={{ pageSize: 8 }}
+              rowSelection={{
+                selectedRowKeys: selectedAccessions,
+                onChange: (keys) =>
+                  setSelectedAccessions((keys as string[]).slice(0, 12)),
+              }}
+              locale={{
+                emptyText: `No filings with stored sections for ${tickers.join(", ")}.`,
+              }}
+              columns={[
+                {
+                  title: "Ticker",
+                  dataIndex: "ticker",
+                  width: 80,
+                },
+                { title: "Year", dataIndex: "year", width: 70 },
+                { title: "Form", dataIndex: "form", width: 90 },
+                { title: "Filed", dataIndex: "filingDate", width: 110 },
+                {
+                  title: "Items",
+                  dataIndex: "items",
+                  render: (items: string[]) => items.join(", "),
+                },
+                {
+                  title: "Accession",
+                  dataIndex: "accessionNumber",
+                  ellipsis: true,
+                },
+              ]}
+            />
+            <Typography.Text type="secondary">
+              {selectedAccessions.length} selected (max 12)
+            </Typography.Text>
+          </Space>
+        ) : null}
+      </Modal>
     </Space>
   );
 }

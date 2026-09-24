@@ -18,8 +18,8 @@ Track progress here so a new chat knows what is done. Update after each mileston
   - `GET /api/filings/:accession`, `/api/sections/:id`, `/api/documents/:id`
   - UI: filters → results grid → document drawer (sections / exhibits) → Diff / Peer metrics
 - [x] **Section matrix**
-  - `GET /api/matrix?item=&tickers=`
-  - Side-by-side latest stored section snippets across tickers
+  - Peer mode: `GET /api/matrix?item=&tickers=&year=`
+  - Same-company years: wizard (company → filings → section) via `section-filings` + `matrix/by-accessions`
 
 ## Sample data
 
