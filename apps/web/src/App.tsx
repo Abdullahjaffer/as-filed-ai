@@ -18,7 +18,7 @@ import {
   Statistic,
   Steps,
   Table,
-  Tabs,
+  Tree,
   Tag,
   Typography,
   message,
@@ -100,8 +100,16 @@ type SearchResultRow = {
   item?: string | null;
   title?: string | null;
   sectionId?: string | null;
+  chunkId?: string | null;
   snippet?: string | null;
   hasText?: boolean;
+};
+type OutlineSection = {
+  id: string;
+  item: string;
+  title: string;
+  level: number;
+  children: OutlineSection[];
 };
 type FilingDetail = {
   filing: {
@@ -115,7 +123,7 @@ type FilingDetail = {
     sic?: string | null;
     sicDescription?: string | null;
   };
-  sections: Array<{ id: string; item: string; title: string }>;
+  sections: OutlineSection[];
   documents: Array<{
     id: string;
     kind: string;
@@ -1328,6 +1336,60 @@ function FilingsScreen({
   );
 }
 
+function findOutline(nodes: OutlineSection[], id: string): OutlineSection | null {
+  for (const node of nodes) {
+    if (node.id === id) {
+      return node;
+    }
+    const child = findOutline(node.children, id);
+    if (child) {
+      return child;
+    }
+  }
+  return null;
+}
+
+function ancestorKeys(nodes: OutlineSection[], id: string, path: string[] = []): string[] | null {
+  for (const node of nodes) {
+    if (node.id === id) {
+      return path;
+    }
+    const found = ancestorKeys(node.children, id, [...path, node.id]);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+type OutlineTreeNode = {
+  key: string;
+  title: string;
+  children: OutlineTreeNode[];
+};
+
+function outlineTree(nodes: OutlineSection[]): OutlineTreeNode[] {
+  return nodes.map((node) => ({
+    key: node.id,
+    title:
+      node.level === 0 && /^\d/.test(node.item)
+        ? `Item ${node.item} · ${node.title}`
+        : node.title,
+    children: outlineTree(node.children),
+  }));
+}
+
+function readableText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function DocumentDrawer({
   accession,
   focusSectionId,
@@ -1349,6 +1411,7 @@ function DocumentDrawer({
   const [detail, setDetail] = useState<FilingDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [sectionBody, setSectionBody] = useState<string | null>(null);
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
   const [docBody, setDocBody] = useState<string | null>(null);
@@ -1358,6 +1421,7 @@ function DocumentDrawer({
     if (!accession) {
       setDetail(null);
       setActiveSectionId(null);
+      setExpandedKeys([]);
       setSectionBody(null);
       setActiveDocId(null);
       setDocBody(null);
@@ -1373,12 +1437,15 @@ function DocumentDrawer({
       })
       .then((json) => {
         setDetail(json);
-        const prefer =
-          focusSectionId &&
-          json.sections.some((s) => s.id === focusSectionId)
+        const focused =
+          focusSectionId && findOutline(json.sections, focusSectionId)
             ? focusSectionId
             : (json.sections[0]?.id ?? null);
-        setActiveSectionId(prefer);
+        setActiveSectionId(focused);
+        setExpandedKeys([
+          ...json.sections.map((section) => section.id),
+          ...(focused ? (ancestorKeys(json.sections, focused) ?? []) : []),
+        ]);
         setActiveDocId(null);
         setDocBody(null);
       })
@@ -1428,15 +1495,15 @@ function DocumentDrawer({
     }
   }
 
-  const activeSection = detail?.sections.find((s) => s.id === activeSectionId);
+  const activeSection = detail
+    ? findOutline(detail.sections, activeSectionId ?? "")
+    : null;
   const exhibits =
     detail?.documents.filter((d) => d.kind === "exhibit") ?? [];
-  const primaryDocs =
-    detail?.documents.filter((d) => d.kind !== "exhibit") ?? [];
 
   return (
     <Drawer
-      width={720}
+      width="92%"
       open={Boolean(accession)}
       onClose={onClose}
       title={
@@ -1527,133 +1594,76 @@ function DocumentDrawer({
               Open on EDGAR
             </a>
           </div>
-          <Tabs
-            items={[
-              {
-                key: "sections",
-                label: `Sections (${detail.sections.length})`,
-                children:
-                  detail.sections.length === 0 ? (
-                    <Typography.Text type="secondary">
-                      No parsed sections for this filing. Index-only rows and
-                      some forms have no stored narrative.
-                    </Typography.Text>
-                  ) : (
-                    <Space
-                      direction="vertical"
-                      style={{ width: "100%" }}
-                      size="middle"
-                    >
-                      <Select
-                        style={{ width: "100%" }}
-                        value={activeSectionId ?? undefined}
-                        onChange={setActiveSectionId}
-                        options={detail.sections.map((s) => ({
-                          value: s.id,
-                          label: `Item ${s.item} · ${s.title}`,
-                        }))}
-                      />
-                      {bodyLoading && !docBody ? (
-                        <Spin />
-                      ) : (
-                        <Typography.Paragraph
-                          style={{
-                            whiteSpace: "pre-wrap",
-                            maxHeight: "60vh",
-                            overflow: "auto",
-                          }}
-                        >
-                          {sectionBody ?? "No body"}
-                        </Typography.Paragraph>
-                      )}
-                    </Space>
-                  ),
-              },
-              {
-                key: "exhibits",
-                label: `Exhibits (${exhibits.length})`,
-                children:
-                  exhibits.length === 0 ? (
-                    <Typography.Text type="secondary">
-                      No EX-99 exhibits stored for this accession.
-                    </Typography.Text>
-                  ) : (
-                    <Space
-                      direction="vertical"
-                      style={{ width: "100%" }}
-                      size="middle"
-                    >
-                      {exhibits.map((d) => (
-                        <Button
-                          key={d.id}
-                          type={activeDocId === d.id ? "primary" : "default"}
-                          onClick={() => void loadDocument(d.id)}
-                        >
-                          {d.documentType} · {d.filename}
-                        </Button>
-                      ))}
-                      {activeDocId ? (
-                        bodyLoading ? (
-                          <Spin />
-                        ) : (
-                          <Typography.Paragraph
-                            style={{
-                              whiteSpace: "pre-wrap",
-                              maxHeight: "50vh",
-                              overflow: "auto",
-                            }}
-                          >
-                            {(docBody ?? "").slice(0, 80_000)}
-                          </Typography.Paragraph>
-                        )
-                      ) : null}
-                    </Space>
-                  ),
-              },
-              {
-                key: "primary",
-                label: `Documents (${primaryDocs.length})`,
-                children:
-                  primaryDocs.length === 0 ? (
-                    <Typography.Text type="secondary">
-                      No primary document text stored.
-                    </Typography.Text>
-                  ) : (
-                    <Space
-                      direction="vertical"
-                      style={{ width: "100%" }}
-                      size="middle"
-                    >
-                      {primaryDocs.map((d) => (
-                        <Button
-                          key={d.id}
-                          type={activeDocId === d.id ? "primary" : "default"}
-                          onClick={() => void loadDocument(d.id)}
-                        >
-                          {d.documentType} · {d.filename}
-                        </Button>
-                      ))}
-                      {activeDocId &&
-                      primaryDocs.some((d) => d.id === activeDocId) ? (
-                        bodyLoading ? (
-                          <Spin />
-                        ) : (
-                          <Typography.Paragraph
-                            style={{
-                              whiteSpace: "pre-wrap",
-                              maxHeight: "50vh",
-                              overflow: "auto",
-                            }}
-                          >
-                            {(docBody ?? "").slice(0, 80_000)}
-                          </Typography.Paragraph>
-                        )
-                      ) : null}
-                    </Space>
-                  ),
-              },
-            ]}
-          />
+          <div style={{ display: "flex", gap: 16, minHeight: "70vh" }}>
+            <div
+              style={{
+                width: 320,
+                flex: "0 0 320px",
+                overflow: "auto",
+                maxHeight: "75vh",
+              }}
+            >
+              {detail.sections.length === 0 ? (
+                <Typography.Text type="secondary">
+                  No parsed sections for this filing. Index-only rows and some
+                  forms have no stored narrative.
+                </Typography.Text>
+              ) : (
+                <Tree
+                  blockNode
+                  selectedKeys={
+                    activeDocId || !activeSectionId ? [] : [activeSectionId]
+                  }
+                  expandedKeys={expandedKeys}
+                  onExpand={(keys) => setExpandedKeys(keys.map(String))}
+                  treeData={outlineTree(detail.sections)}
+                  onSelect={(keys) => {
+                    const id = String(keys[0] ?? "");
+                    if (!id) {
+                      return;
+                    }
+                    setActiveDocId(null);
+                    setDocBody(null);
+                    setActiveSectionId(id);
+                  }}
+                />
+              )}
+              {exhibits.length > 0 ? (
+                <div style={{ marginTop: 16 }}>
+                  <Typography.Text type="secondary">Exhibits</Typography.Text>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      marginTop: 8,
+                    }}
+                  >
+                    {exhibits.map((doc) => (
+                      <Button
+                        key={doc.id}
+                        type={activeDocId === doc.id ? "primary" : "default"}
+                        onClick={() => void loadDocument(doc.id)}
+                      >
+                        {doc.documentType} · {doc.filename}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div style={{ flex: 1, overflow: "auto", maxHeight: "75vh" }}>
+              {bodyLoading ? (
+                <Spin />
+              ) : (
+                <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>
+                  {activeDocId
+                    ? readableText(docBody ?? "").slice(0, 200_000) || "No body"
+                    : (sectionBody ?? "No body")}
+                </Typography.Paragraph>
+              )}
+            </div>
+          </div>
         </Space>
       )}
     </Drawer>

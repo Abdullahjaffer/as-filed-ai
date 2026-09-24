@@ -57,7 +57,7 @@ pnpm dev
 | --- | --- |
 | `DATABASE_URL` | Default `postgres://filing:filing@localhost:55432/filing_desk` |
 | `SEC_USER_AGENT` | Required for ingest (SEC fair access) |
-| `OPENAI_API_KEY` | Embeddings (ingest), chat agent |
+| `OPENAI_API_KEY` | Chat agent and `pnpm embed` |
 | `PORT` | API port (default `4000`) |
 
 ## What the app does

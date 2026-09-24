@@ -7,8 +7,8 @@ import {
 } from "@filing-desk/db";
 import { and, cosineDistance, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "./db";
 import OpenAI from "openai";
+import { db } from "./db";
 
 async function embedQuery(query: string): Promise<number[] | null> {
   const key = process.env.OPENAI_API_KEY;
@@ -179,7 +179,9 @@ export async function searchFilings(
       )
       .orderBy((t) => desc(t.similarity))
       .limit(limit);
-    return { ticker: company.ticker, results: rows };
+    if (rows.length > 0) {
+      return { ticker: company.ticker, results: rows };
+    }
   }
 
   const rows = await db
@@ -233,6 +235,7 @@ export async function readSection(input: z.infer<typeof toolSchemas.readSection>
       and(
         eq(sections.companyId, company.id),
         eq(sections.item, input.item),
+        eq(sections.level, 0),
         input.accessionNumber
           ? eq(filings.accessionNumber, input.accessionNumber)
           : undefined,

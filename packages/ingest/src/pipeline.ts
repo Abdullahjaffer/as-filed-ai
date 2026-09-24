@@ -4,23 +4,14 @@ import {
   documents,
   facts,
   filings,
-  chunks,
-  sections,
 } from "@filing-desk/db";
 import { eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { embedTexts } from "./embeddings.ts";
 import { getDatabaseUrl, requireEnv } from "./env.ts";
-import {
-  chunkText,
-  keepDocument,
-  parseSections,
-  sha256,
-  splitSubmissionDocuments,
-  stripHtml,
-} from "./parse.ts";
+import { keepDocument, sha256, splitSubmissionDocuments } from "./parse.ts";
+import { replaceDocumentSections } from "./store-sections.ts";
 import {
   SecClient,
   filingArchiveUrl,
@@ -286,43 +277,19 @@ async function ingestOne(
         })
         .returning();
 
-      const plain = stripHtml(doc.text);
-      const parsed = parseSections(plain, filing.form);
-      for (const section of parsed) {
-        const [secRow] = await db
-          .insert(sections)
-          .values({
-            documentId: inserted.id,
-            filingId: filing.id,
-            companyId: company.id,
-            item: section.item,
-            title: section.title,
-            body: section.body,
-          })
-          .returning();
-
-        const parts = chunkText(section.body);
-        const embeddings =
-          openaiKey && parts.length > 0
-            ? await embedTexts(openaiKey, parts)
-            : parts.map(() => null);
-
-        for (let i = 0; i < parts.length; i++) {
-          await db.insert(chunks).values({
-            sectionId: secRow.id,
-            companyId: company.id,
-            filingId: filing.id,
-            ordinal: i,
-            content: parts[i],
-            embedding: embeddings[i] ?? null,
-          });
-        }
-      }
+      await replaceDocumentSections(db, {
+        documentId: inserted.id,
+        filingId: filing.id,
+        companyId: company.id,
+        form: filing.form,
+        kind,
+        html: doc.text,
+      });
     }
   }
 
   if (!openaiKey) {
-    console.warn("OPENAI_API_KEY unset; chunks stored without embeddings");
+    console.warn("OPENAI_API_KEY unset; chat and pnpm embed need it. Ingest stores chunks without embeddings.");
   }
 }
 

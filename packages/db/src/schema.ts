@@ -8,6 +8,7 @@
  */
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   date,
   index,
@@ -65,25 +66,33 @@ export const documents = pgTable("documents", {
   sourceUrl: text("source_url").notNull(),
   content: text("content").notNull(),
   sha256: text("sha256").notNull(),
+  parserVersion: text("parser_version"),
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const sections = pgTable("sections", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  documentId: uuid("document_id")
-    .notNull()
-    .references(() => documents.id),
-  filingId: uuid("filing_id")
-    .notNull()
-    .references(() => filings.id),
-  companyId: uuid("company_id")
-    .notNull()
-    .references(() => companies.id),
-  item: text("item").notNull(),
-  title: text("title").notNull(),
-  body: text("body").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const sections = pgTable(
+  "sections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id),
+    filingId: uuid("filing_id")
+      .notNull()
+      .references(() => filings.id),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id),
+    parentId: uuid("parent_id").references((): AnyPgColumn => sections.id),
+    ordinal: integer("ordinal").notNull().default(0),
+    level: integer("level").notNull().default(0),
+    item: text("item").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("sections_filing_level_idx").on(table.filingId, table.level)],
+);
 
 export const chunks = pgTable(
   "chunks",

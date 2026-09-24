@@ -17,4 +17,4 @@ pnpm db:push
 
 Default URL in `drizzle.config.ts`: `postgres://filing:filing@localhost:55432/filing_desk`.
 
-`chunks.embedding` is `vector(1536)` with an HNSW cosine index. `chunks.content` has a GIN full-text index (`to_tsvector('english', content)`).
+`chunks.embedding` is `vector(1536)` with an HNSW cosine index. Ingest leaves it null; `pnpm embed` fills it with OpenAI `text-embedding-3-small`. `chunks.content` has a GIN full-text index (`to_tsvector('english', content)`).

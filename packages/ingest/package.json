@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "ingest": "tsx src/cli.ts",
+    "reparse": "tsx src/reparse.ts",
     "eval": "tsx src/eval.ts",
     "embed": "tsx src/embed-backfill.ts"
   },

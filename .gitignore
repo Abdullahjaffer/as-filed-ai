@@ -8,3 +8,4 @@ dist
 *.tsbuildinfo
 .vite
 coverage
+packages/ingest/local_cache

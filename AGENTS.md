@@ -43,7 +43,7 @@ Vite proxies `/api` to port 4000.
 | --- | --- |
 | `DATABASE_URL` | API, ingest, evals, `db:push` (default host port **55432**) |
 | `SEC_USER_AGENT` | Ingest (SEC fair access: e.g. `FilingDesk you@email.com`) |
-| `OPENAI_API_KEY` | Embeddings during ingest, chat agent, evals |
+| `OPENAI_API_KEY` | Chat agent, `pnpm embed`, evals |
 | `PORT` | API listen port (default `4000`) |
 
 ## SEC fair access

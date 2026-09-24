@@ -23,15 +23,16 @@ Track progress here so a new chat knows what is done. Update after each mileston
 
 ## Sample data
 
-Ingested: **NVDA, AAPL, MSFT, AMD**. All chunks embedded.
+Ingested: **NVDA, AAPL**. Chunks stored without embeddings (`pnpm embed -- NVDA AAPL` fills them).
 
 ## Optional next
 
 - [ ] Ingest more watchlist tickers for fuller eval coverage
+- [x] Section tree from stored HTML (level 0 items, level 1 subsections) and two-pane document viewer
 - [ ] Tighten section heading heuristics (e.g. MSFT Item 7)
 - [ ] Persist multi-turn research briefs per ticker
 
 ## Notes
 
 1. Read `AGENTS.md` and `docs/architecture.md` (see **Primary use case**).
-2. Postgres host port **55432**. Chat needs `OPENAI_API_KEY`.
+2. Postgres host port **55432**. Chat and `pnpm embed` need `OPENAI_API_KEY`. Embeddings are `text-embedding-3-small` (1536). Ingest skips them.

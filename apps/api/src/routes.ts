@@ -434,12 +434,38 @@ export async function getFilingDetail(
   const sectionRows = await db
     .select({
       id: sections.id,
+      parentId: sections.parentId,
+      ordinal: sections.ordinal,
+      level: sections.level,
       item: sections.item,
       title: sections.title,
     })
     .from(sections)
     .where(eq(sections.filingId, row.id))
-    .orderBy(sections.item);
+    .orderBy(sections.ordinal);
+
+  const byParent = new Map<string | null, typeof sectionRows>();
+  for (const section of sectionRows) {
+    const key = section.parentId;
+    const list = byParent.get(key) ?? [];
+    list.push(section);
+    byParent.set(key, list);
+  }
+  type SectionNode = {
+    id: string;
+    item: string;
+    title: string;
+    level: number;
+    children: SectionNode[];
+  };
+  const toNode = (section: (typeof sectionRows)[number]): SectionNode => ({
+    id: section.id,
+    item: section.item,
+    title: section.title,
+    level: section.level,
+    children: (byParent.get(section.id) ?? []).map(toNode),
+  });
+  const sectionTree = (byParent.get(null) ?? []).map(toNode);
 
   const documentRows = await db
     .select({
@@ -455,7 +481,7 @@ export async function getFilingDetail(
   const { id: _filingId, ...filing } = row;
   res.json({
     filing,
-    sections: sectionRows,
+    sections: sectionTree,
     documents: documentRows,
   });
 }
@@ -603,6 +629,7 @@ export async function getSectionMatrix(
         and(
           eq(sections.companyId, company.id),
           eq(sections.item, item),
+          eq(sections.level, 0),
           year
             ? sql`extract(year from ${filings.filingDate}::date) = ${year}`
             : undefined,
@@ -718,7 +745,7 @@ export async function getMatrixByAccessions(
     })
     .from(sections)
     .innerJoin(filings, eq(sections.filingId, filings.id))
-    .where(inArray(sections.filingId, filingIds));
+    .where(and(inArray(sections.filingId, filingIds), eq(sections.level, 0)));
 
   const itemOrder = ["1", "1A", "2", "7", "8K", "PROXY"];
   const itemMeta = new Map<string, string>();
@@ -800,6 +827,7 @@ export async function listSectionFilings(
     .where(
       and(
         eq(filings.companyId, company.id),
+        eq(sections.level, 0),
         form ? eq(filings.form, form) : undefined,
         year
           ? sql`extract(year from ${filings.filingDate}::date) = ${Number(year)}`

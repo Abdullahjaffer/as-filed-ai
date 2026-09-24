@@ -9,6 +9,7 @@
     "build": "pnpm -r --if-present build",
     "db:push": "pnpm --filter @filing-desk/db push",
     "ingest": "pnpm --filter @filing-desk/ingest ingest",
+    "ingest:reparse": "pnpm --filter @filing-desk/ingest reparse",
     "embed": "pnpm --filter @filing-desk/ingest embed",
     "eval": "pnpm --filter @filing-desk/ingest eval"
   }

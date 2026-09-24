@@ -1,5 +1,9 @@
 import OpenAI from "openai";
 
+/** OpenAI text-embedding-3-small. Matches chunks.embedding vector(1536). */
+export const EMBEDDING_DIMENSIONS = 1536;
+
+/** Passage embeddings for stored filing chunks. */
 export async function embedTexts(
   apiKey: string,
   texts: string[],

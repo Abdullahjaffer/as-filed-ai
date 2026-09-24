@@ -56,8 +56,8 @@ Per ticker:
 2. Load submissions (and linked `filings.files` pages). Upsert `companies` and `filings` for forms `10-K`, `10-Q`, `8-K`, `DEF 14A`, `3`, `4`, `5` (and common variants like `10-K/A` treated by base form where noted in code).
 3. Load companyfacts. Keep consolidated `us-gaap` facts only (skip facts with a `segment`). Upsert `facts` by unique `fact_key`.
 4. For recent narrative filings (capped per ticker: 4×10-K, 8×10-Q, 2×DEF 14A, 20×8-K within 24 months): if documents are not already stored for that accession, download the complete submission `.txt`, split `<DOCUMENT>` blocks, keep the primary form document and `EX-99*` exhibits in `documents`.
-5. Parse narrative into `sections` (Business, Risk Factors, MD&A for annual/quarterly; 8-K item text; proxy sections when detectable).
-6. Chunk section bodies (~1500 chars, overlap), embed with OpenAI `text-embedding-3-small` (1536 dims) when `OPENAI_API_KEY` is set, write `chunks`. Forms 3/4/5 are indexed in `filings` only.
+5. Parse narrative into `sections`. A form catalog in `packages/ingest/src/outline.ts` lists item codes per form. A heading walker turns bold spans (or proxy anchor targets) into a tree: level 0 is the SEC item, level 1 is a subsection (`parent_id`, `ordinal`). `documents.parser_version` records which catalog build produced the rows.
+6. Chunk leaf sections only (~1500 chars, overlap) and write `chunks` without embeddings. `pnpm embed` fills vectors later with OpenAI `text-embedding-3-small` (1536 dims); pass tickers to limit it (`pnpm embed -- NVDA AAPL`). Forms 3/4/5 are indexed in `filings` only. `pnpm ingest:reparse` rebuilds sections from stored HTML when the parser version changes.
 
 ## Tables
 
@@ -65,8 +65,8 @@ See root README and `packages/db/src/schema.ts`. Roles:
 
 - `companies` / `filings` — EDGAR index
 - `documents` — raw filing / exhibit text
-- `sections` — item-level narrative
-- `chunks` — retrieval units + `vector(1536)` + full-text search
+- `sections` — item tree (`level` 0 is the SEC item; children are subsections)
+- `chunks` — retrieval units + optional `vector(1536)` + full-text search
 - `facts` — consolidated XBRL
 - `messages` / `traces` — chat and tool steps
 - `eval_cases` / `eval_runs` — frozen questions and scores
@@ -95,7 +95,7 @@ System prompt: use tools for every figure and quote; cite form, date, accession 
 | GET | `/api/companies/:ticker/facts/strip` | Revenue, operating income, net income, diluted EPS series |
 | GET | `/api/companies/:ticker/filings` | Filing list |
 | GET | `/api/search` | Filing index or keyword/section search (`ticker`, `form`, `year`, `item`, `q`) |
-| GET | `/api/filings/:accession` | Filing meta, section list, document list (no bodies) |
+| GET | `/api/filings/:accession` | Filing meta, section tree, document list (no bodies) |
 | GET | `/api/sections/:id` | Stored section body |
 | GET | `/api/documents/:id` | Stored document/exhibit text |
 | GET | `/api/matrix` | Latest section snippet per ticker for an item (optional `year`) |
@@ -105,7 +105,7 @@ System prompt: use tools for every figure and quote; cite form, date, accession 
 
 ## UI
 
-Ant Design layout in `apps/web`. Ant Design X for chat bubbles, sender, and tool-trace display. Screens: Research brief, Filings (filters + results + document drawer), Section matrix, Peer metrics (≤4 tickers), Filing changes (two filings + section item), Evals.
+Ant Design layout in `apps/web`. Ant Design X for chat bubbles, sender, and tool-trace display. Screens: Research brief, Filings (filters + results + document viewer with the outline on the left and the filing text on the right), Section matrix, Peer metrics (≤4 tickers), Filing changes (two filings + section item), Evals. Matrix, diffs, and `readSection` use level-0 items.
 
 ## Evals
 

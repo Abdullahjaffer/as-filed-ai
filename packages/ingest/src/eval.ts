@@ -128,7 +128,13 @@ async function runCase(
       })
       .from(sections)
       .innerJoin(filings, eq(sections.filingId, filings.id))
-      .where(and(eq(sections.companyId, company.id), eq(sections.item, expected.item)))
+      .where(
+        and(
+          eq(sections.companyId, company.id),
+          eq(sections.item, expected.item),
+          eq(sections.level, 0),
+        ),
+      )
       .orderBy(desc(filings.filingDate))
       .limit(1);
     const row = rows[0];
