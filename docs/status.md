@@ -14,6 +14,7 @@ Track progress here so a new chat knows what is done. Update after each mileston
   - Deep links: Compare peers · Diff risk factors
 - [x] Peer metrics + Filing changes + Evals as supporting screens (not in the header nav)
 - [x] Header nav: Research brief, View filings, Matrix (no sidebar)
+- [x] Client routes with lazy-loaded screens (`/`, `/filings`, `/filings/:accession`, `/compare`, `/matrix`, `/peers`, `/changes`, `/evals`)
 - [x] **Filings search + in-app document view**
   - `GET /api/search` (index or full-text over chunks)
   - `GET /api/filings/:accession`, `/api/sections/:id`, `/api/documents/:id`

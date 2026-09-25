@@ -105,7 +105,7 @@ System prompt: use tools for every figure and quote; cite form, date, accession 
 
 ## UI
 
-Ant Design layout in `apps/web`. Ant Design X for chat bubbles, sender, and tool-trace display. Screens: Research brief, Filings (filters + results), Document (outline on the left, filing text on the right), Compare filings (two documents side by side), Section matrix, Peer metrics (≤4 tickers), Filing changes (two filings + section item), Evals. Document opens from a filing row. Compare and Create matrix sit on a toolbar above the filings grid and run on the selected filings. Matrix, diffs, and `readSection` use level-0 items.
+Ant Design layout in `apps/web`. Ant Design X for chat bubbles, sender, and tool-trace display. Client routes (React Router), each screen lazy-loaded: `/` Research brief (`?ticker=`), `/filings` (filters + results), `/filings/:accession` Document (`?section=`), `/compare` (two documents side by side, `?left=&right=&section=`), `/matrix` (`?accessions=`), `/peers` (≤4 tickers), `/changes` (two filings + section item), `/evals`. Header nav is Research brief, View filings, and Matrix. Document opens from a filing row. Compare and Create matrix sit on a toolbar above the filings grid and run on the selected filings. Matrix, diffs, and `readSection` use level-0 items.
 
 ## Evals
 

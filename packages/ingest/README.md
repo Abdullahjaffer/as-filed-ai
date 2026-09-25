@@ -7,6 +7,7 @@ SEC EDGAR ingest CLI and eval runner.
 pnpm ingest -- NVDA AAPL
 pnpm ingest                 # packages/ingest/watchlist.json
 pnpm ingest:reparse -- NVDA # rebuild sections from stored HTML
+pnpm ingest:decode          # decode HTML entities already stored in sections and chunks
 pnpm eval                   # seed + score packages/ingest/eval-cases.json
 ```
 

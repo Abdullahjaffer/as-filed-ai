@@ -6,6 +6,7 @@
   "scripts": {
     "ingest": "tsx src/cli.ts",
     "reparse": "tsx src/reparse.ts",
+    "decode-stored": "tsx src/decode-stored.ts",
     "eval": "tsx src/eval.ts",
     "embed": "tsx src/embed-backfill.ts"
   },

@@ -10,6 +10,7 @@
     "db:push": "pnpm --filter @filing-desk/db push",
     "ingest": "pnpm --filter @filing-desk/ingest ingest",
     "ingest:reparse": "pnpm --filter @filing-desk/ingest reparse",
+    "ingest:decode": "pnpm --filter @filing-desk/ingest decode-stored",
     "embed": "pnpm --filter @filing-desk/ingest embed",
     "eval": "pnpm --filter @filing-desk/ingest eval"
   }

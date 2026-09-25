@@ -33,18 +33,68 @@ export function sha256(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+const NAMED_ENTITIES: Record<string, string> = {
+  nbsp: " ",
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  ldquo: '"',
+  rdquo: '"',
+  lsquo: "'",
+  rsquo: "'",
+  ndash: "-",
+  mdash: "-",
+  hellip: "...",
+  bull: "•",
+};
+
+function fromCodePoint(code: number): string {
+  if (
+    !Number.isInteger(code) ||
+    code <= 0 ||
+    code > 0x10ffff ||
+    (code >= 0xd800 && code <= 0xdfff)
+  ) {
+    return " ";
+  }
+  return String.fromCodePoint(code);
+}
+
+/** Turn HTML character references into the characters they stand for. */
+export function decodeEntities(value: string): string {
+  let current = value;
+  for (let pass = 0; pass < 2; pass++) {
+    const next = current.replace(
+      /&(#x[0-9a-f]+|#\d+|[a-z]+);/gi,
+      (entity, body: string) => {
+        if (body[0] !== "#") {
+          return NAMED_ENTITIES[body.toLowerCase()] ?? entity;
+        }
+        const hex = body[1] === "x" || body[1] === "X";
+        const code = hex
+          ? Number.parseInt(body.slice(2), 16)
+          : Number.parseInt(body.slice(1), 10);
+        return fromCodePoint(code);
+      },
+    );
+    if (next === current) {
+      break;
+    }
+    current = next;
+  }
+  return current;
+}
+
 export function stripHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#160;/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const text = decodeEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " "),
+  );
+  return text.replace(/\s+/g, " ").trim();
 }
 
 export function chunkText(

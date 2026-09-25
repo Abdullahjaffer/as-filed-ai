@@ -1,5 +1,5 @@
 import { isNoiseTitle, outlineFor, type FormOutline } from "./outline.ts";
-import { stripHtml } from "./parse.ts";
+import { decodeEntities, stripHtml } from "./parse.ts";
 
 export type ParsedNode = {
   item: string;
@@ -18,22 +18,6 @@ type RawHeading = {
 const BODY_CAP = 500_000;
 const ITEM_RE = /^item\s+([0-9]{1,2}[a-c]?(?:\.\d{2})?)\b[.\s:–—-]*(.*)$/i;
 const BLOCK_BOUNDARY = /<\/(?:div|p|td|tr|table|h[1-6]|li|br)\b|<(?:div|p|td|tr|table|h[1-6]|li|br)\b/i;
-
-function decodeEntities(value: string): string {
-  return value
-    .replace(/&#160;|&nbsp;/gi, " ")
-    .replace(/&#8217;|&#39;|&rsquo;|&apos;/gi, "'")
-    .replace(/&#8220;|&#8221;|&quot;/gi, '"')
-    .replace(/&#8211;|&ndash;/gi, "-")
-    .replace(/&#8212;|&mdash;/gi, "-")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#(\d+);/g, (_, n: string) => {
-      const code = Number(n);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : " ";
-    });
-}
 
 function cleanText(value: string): string {
   return decodeEntities(value.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
